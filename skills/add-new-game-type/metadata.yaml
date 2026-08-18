@@ -1,0 +1,6 @@
+name: add-new-game-type
+owner: platform-ai
+version: "1.1.0"
+last_reviewed: "2026-06-02"
+tags: ["core", "game-type", "nuget", "bac-bo", "gitlab", "snapshot", "merge-order"]
+mcp_dependencies: ["gitlab"]

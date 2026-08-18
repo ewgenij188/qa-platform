@@ -1,0 +1,5 @@
+---
+name: winfinity-testops
+description: "Winfinity TestOps project (id=1): write test cases, analyze failed tests, search 15k+ test cases in Allure TestOps"
+tags: ["testops", "allure", "qa", "test-cases", "winfinity", "core"]
+mcp_dependencies: ["testops"]

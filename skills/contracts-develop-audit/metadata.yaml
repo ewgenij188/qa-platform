@@ -1,0 +1,6 @@
+name: contracts-develop-audit
+owner: platform-ai
+version: "1.4.0"
+last_reviewed: "2026-07-29"
+tags: ["contracts", "openapi", "audit", "develop"]
+mcp_dependencies: ["gitlab"]

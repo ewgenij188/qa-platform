@@ -1,0 +1,6 @@
+name: add-new-slot-game
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-06-02"
+tags: ["qa", "slots", "autotests", "qa-tests-v2"]
+mcp_dependencies: []

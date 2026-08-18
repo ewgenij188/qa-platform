@@ -1,0 +1,6 @@
+name: add-new-game-type-autotests
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-06-02"
+tags: ["qa-tests-v2", "game-type", "allure", "autotests", "core-api", "bac-bo"]
+mcp_dependencies: ["testops"]

@@ -1,0 +1,6 @@
+name: branch-release
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-05-28"
+tags: ["release", "gitlab", "git"]
+mcp_dependencies: ["gitlab"]

@@ -1,0 +1,6 @@
+name: add-tablesettings-field
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-07-14"
+tags: ["backoffice", "tablesettings", "avro", "mongodb", "kafka"]
+mcp_dependencies: []

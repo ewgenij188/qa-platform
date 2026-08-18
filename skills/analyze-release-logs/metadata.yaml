@@ -1,0 +1,6 @@
+name: analyze-release-logs
+owner: platform-ai
+version: "2.0.0"
+last_reviewed: "2026-07-27"
+tags: ["release", "opensearch", "logs", "regression"]
+mcp_dependencies: ["opensearch"]
