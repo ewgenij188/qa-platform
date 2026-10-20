@@ -1,0 +1,543 @@
+# Independent concerns, one parallel job each, so a failure names itself:
+# `skills` checks what Claude Code loads from skills/ and that every
+# `postman:<name>` the repo ships names one of them, `manifest` checks the
+# index `postman init` fetches, `installer` unit-tests `npx @postman/postman-plugin`
+# (installer-smoke.yml runs it against the real agent CLIs), `schema` checks each
+# vendor plugin manifest against that vendor's own published schema. One job per
+# route installs this checkout into a pinned agent (Cursor: the latest) and checks what it sends
+# its model and the MCP server: `claude-code`, `codex`, `copilot`, `cursor`, `factory`, `kimi`,
+# `opencode` and `pi`; `antigravity` checks only what agy registers (see that job). Every job but
+# `skills`, `manifest`, `schema`, `cursor` and `antigravity` runs on Linux, and on Windows too
+# unless a pull request changes only skills or docs (see `os`).
+name: Validate
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+
+# A new push to a pull request cancels the run it supersedes. Every other run gets a
+# group of its own: a group holds one pending run, so sharing one would drop pushes to main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # The Windows legs take two to three times as long, so a pull request that changes
+  # only skills or docs skips them; Linux still loads every skill. A push runs both.
+  os:
+    name: Runners
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Windows too, unless a pull request changes only skills or docs
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          # What a Windows leg runs or reads, short of skill content and the manifest of it.
+          CODE: '^(installer|opencode|scripts|hooks|\.github/workflows|\.[a-z]+-plugin)/|^mcp[^/]*\.json$|^\.gitattributes$'
+        run: |
+          linux='{"os":"ubuntu-latest","label":"Linux"}'
+          windows='{"os":"windows-latest","label":"Windows"}'
+          windows_too=true
+          if [ "$EVENT" = pull_request ]; then
+            # A pull request checks out its merge commit, whose first parent is the base.
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            grep -qE "$CODE" <<< "$changed" || windows_too=false
+          fi
+          if [ "$windows_too" = true ]; then
+            echo "matrix={\"include\":[$linux,$windows]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":[$linux]}" >> "$GITHUB_OUTPUT"
+          fi
+
+  skills:
+    name: Skills
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pure bash - no setup-node here on purpose.
+      - name: Every skill has frontmatter Claude Code can load
+        run: |
+          status=0
+          for skill in skills/*/SKILL.md; do
+            head -1 "$skill" | grep -qx -- '---' || { echo "::error file=$skill::missing YAML frontmatter"; status=1; }
+            grep -qE '^name:' "$skill" || { echo "::error file=$skill::frontmatter has no name"; status=1; }
+            grep -qE '^description:' "$skill" || { echo "::error file=$skill::frontmatter has no description"; status=1; }
+          done
+          exit $status
+
+      # An agent relays a stale postman:<name> to the user as-is. intent.md is a
+      # historical record of retired skill names, so it is not scanned.
+      # A postman: inside a longer name, like Kimi's plugin-postman:postman, is skipped.
+      - name: Every postman:<name> reference names a real skill
+        run: |
+          status=0
+          while IFS=: read -r file line match; do
+            name=${match#*postman:}
+            [ -d "skills/$name" ] || { echo "::error file=$file,line=$line::postman:$name names no skill under skills/"; status=1; }
+          done < <(grep -rnoE '(^|[^a-z0-9-])postman:[a-z0-9-]+' skills hooks README.md CONTRIBUTING.md)
+          exit $status
+
+  # The manifest carries a sha256 per file, and `postman init` rejects a file whose
+  # bytes do not match. A stale manifest therefore does not fail loudly here - it
+  # fails on a user's machine, as a skill that silently falls back to the CLI's
+  # bundled copy. Checking it on every push is much cheaper than diagnosing that.
+  manifest:
+    name: Manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Manifest and Kimi's mandate are in sync with their sources
+        run: node scripts/build-manifest.js --check
+
+      - name: Every JSON file parses
+        run: node scripts/check-json.js
+
+      - name: Routes agree with their MCP configs
+        run: node .claude/hooks/validate-manifests.js
+
+      # SchemaStore's Claude Code schemas check structure and types but accept
+      # invalid plugin names and unknown keys; Claude Code's own validator catches
+      # those, so both run.
+      - name: Claude Code accepts the marketplace and plugin manifests
+        run: npx -y @anthropic-ai/claude-code plugin validate .
+
+  # Its harness installs the plugin as a user does, has the pinned OpenCode CLI load
+  # every skill, and checks what OpenCode sends a stand-in model and MCP server.
+  opencode:
+    name: OpenCode package / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: os
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.os.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: opencode
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Install development dependencies
+        run: npm ci
+
+      - name: Unit tests
+        # `npm test` with both reporters; node reads them only ahead of the test files.
+        run: |
+          npm run build
+          node --test --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/unit-tests.tap" test/*.test.js
+
+      # A green run that skipped tests hid that Windows ran nothing end to end.
+      - name: No unit test was skipped
+        run: |
+          test -s "$RUNNER_TEMP/unit-tests.tap"
+          if grep -E '# SKIP' "$RUNNER_TEMP/unit-tests.tap"; then exit 1; fi
+
+      - name: Packed-install harness
+        run: npm run test:harness
+
+      # `opencode plugin` from a one-commit copy of this checkout, on OpenCode 1 (the pinned CLI) and OpenCode 2,
+      # on every OS the job runs on. Installer smoke runs the GitHub route against the latest releases.
+      - name: Plugin-add harness
+        run: |
+          npm install --prefix "$RUNNER_TEMP/opencode2" @opencode/cli@2.0.23
+          # npm links a package's bin in node_modules/.bin, as a .cmd shim on Windows.
+          OPENCODE2=$(node -p 'require("path").join(process.argv[1], "node_modules", ".bin", process.platform === "win32" ? "opencode.cmd" : "opencode")' "$RUNNER_TEMP/opencode2")
+          node scripts/test-plugin-add.js git
+          OPENCODE_BIN="$OPENCODE2" node scripts/test-plugin-add.js git
+
+      - name: Eval cases cover every skill
+        run: npm run eval:skills:validate
+
+  # On Windows npm installs the agent CLIs as `.cmd` shims, which system.ts
+  # starts through cmd.exe; only a Windows runner takes that path.
+  installer:
+    name: Installer package / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: os
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.os.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Install development dependencies
+        run: npm ci
+
+      # Includes a test that fails when a route in scripts/routes.js has no installer adapter.
+      # `npm test` with both reporters, which node reads only ahead of the test files. Not in
+      # Git Bash: its runtime enables the backup privilege, which the ACL tests' deny bypasses.
+      - name: Unit tests
+        shell: pwsh
+        run: npm run build && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=unit-tests.tap test/*.test.js
+
+      # A green run that skipped tests hid that Windows ran nothing end to end. Windows
+      # skips nothing; elsewhere only a test of the Windows process layer may skip.
+      - name: No unit test was skipped but a Windows-only one off Windows
+        env:
+          ALLOWED_SKIP: ${{ runner.os == 'Windows' && '^$' || '# SKIP Windows only$' }}
+        run: |
+          test -s unit-tests.tap
+          if grep -E '# SKIP' unit-tests.tap | grep -v -E "$ALLOWED_SKIP"; then exit 1; fi
+
+  # Pi installs the installer's npm tarball as a Pi package. The harness packs it,
+  # installs it into a pinned Pi, and checks what Pi sends the model.
+  pi:
+    name: Pi package / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: os
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.os.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Install development dependencies
+        run: npm ci
+
+      # Pinned so a Pi release can't fail a PR on its own; installer-smoke.yml runs the latest nightly.
+      - name: Install Pi
+        run: npm install --no-save --prefix "$RUNNER_TEMP/pi" @earendil-works/pi-coding-agent@0.99.1
+
+      - name: Pi loads the skills, the mandate and the MCP server from the tarball
+        run: npm run test:pi-harness
+        env:
+          PI_BIN: ${{ runner.temp }}/pi/node_modules/.bin/pi${{ runner.os == 'Windows' && '.cmd' || '' }}
+
+  # Droid installs this repo from its marketplace. The harness installs the checkout
+  # into a pinned Droid and checks what Droid sends the model and the MCP server.
+  factory:
+    name: Factory Droid plugin / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: os
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.os.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      # Pinned so a Droid release can't fail a PR on its own; installer-smoke.yml runs the latest nightly.
+      - name: Install Droid
+        run: npm install --no-save --prefix "$RUNNER_TEMP/droid" droid@0.231.0
+
+      - name: Droid loads the skills, the mandate and the MCP server from the marketplace
+        run: node scripts/factory-harness.js
+        env:
+          DROID_BIN: ${{ runner.temp }}/droid/node_modules/.bin/droid${{ runner.os == 'Windows' && '.cmd' || '' }}
+
+  # Claude Code installs this checkout as a local marketplace. The harness checks what Claude Code
+  # sends a stand-in Anthropic API and MCP server: the skills, the hook's mandate and the skill it names.
+  claude-code:
+    name: Claude Code plugin / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: os
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.os.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      # Pinned so a Claude Code release can't fail a PR on its own; installer-smoke.yml runs the latest nightly.
+      - name: Install Claude Code
+        run: npm install --no-save --prefix "$RUNNER_TEMP/claude" @anthropic-ai/claude-code@2.1.285
+
+      - name: Claude Code loads the skills, the mandate and the MCP server from the marketplace
+        run: node scripts/claude-code-harness.js
+        env:
+          CLAUDE_BIN: ${{ runner.temp }}/claude/node_modules/.bin/claude${{ runner.os == 'Windows' && '.cmd' || '' }}
+
+  # Codex installs this checkout as a local marketplace. The harness checks what Codex sends a stand-in
+  # Responses API and MCP server, with the plugin's hook untrusted, as a new user has it, and trusted.
+  codex:
+    name: Codex plugin / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: os
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.os.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      # Pinned so a Codex release can't fail a PR on its own; installer-smoke.yml runs the latest nightly.
+      - name: Install Codex
+        run: npm install --no-save --prefix "$RUNNER_TEMP/codex" @openai/codex@0.159.0
+
+      - name: Codex loads the skills, the mandate and the MCP server from the marketplace
+        run: node scripts/codex-harness.js
+        env:
+          CODEX_BIN: ${{ runner.temp }}/codex/node_modules/.bin/codex${{ runner.os == 'Windows' && '.cmd' || '' }}
+
+  # Copilot CLI installs this checkout as the `postman` marketplace, as the installer does. The harness
+  # runs it offline against a stand-in BYOK model and MCP server: the skills, the hook's mandate and the skill it names.
+  copilot:
+    name: GitHub Copilot CLI plugin / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: os
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.os.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      # Pinned so a Copilot CLI release can't fail a PR on its own; installer-smoke.yml runs the latest nightly.
+      - name: Install Copilot CLI
+        run: npm install --no-save --prefix "$RUNNER_TEMP/copilot" @github/copilot@1.0.98
+
+      - name: Copilot CLI loads the skills, the mandate and the MCP server from the marketplace
+        run: node scripts/copilot-harness.js
+        env:
+          COPILOT_BIN: ${{ runner.temp }}/copilot/node_modules/.bin/copilot${{ runner.os == 'Windows' && '.cmd' || '' }}
+
+  # Kimi Code gets this checkout from the `plugins` CLI, as the installer gives it the repo. The harness
+  # checks what Kimi sends a stand-in model and MCP server: the skills, the mandate and the skill it names.
+  kimi:
+    name: Kimi Code plugin / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: os
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.os.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    # Pinned so a Kimi Code release can't fail a PR on its own; installer-smoke.yml runs the latest nightly.
+    env:
+      KIMI_VERSION: 2.1.1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Install Kimi Code
+        if: runner.os != 'Windows'
+        run: |
+          # The vendor's download host sometimes times out; a second try usually gets through.
+          for attempt in 1 2 3; do
+            curl -fsSL --retry 3 https://code.kimi.com/kimi-code/install.sh | bash && break
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep 15
+          done
+          echo "$HOME/.kimi-code/bin" >> "$GITHUB_PATH"
+
+      - name: Install Kimi Code
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          irm https://code.kimi.com/kimi-code/install.ps1 | iex
+          "$HOME\.kimi-code\bin" >> $env:GITHUB_PATH
+
+      - name: Kimi Code loads the skills, the mandate and the MCP server from the plugin
+        run: node scripts/kimi-harness.js
+
+  # Antigravity's installer takes no version and agy updates itself, so this runs the latest. The
+  # harness checks what agy registers from this checkout, not what reaches its model: signed out,
+  # agy sends a stand-in model no skills or rules at all. Linux only until it's measured on Windows.
+  antigravity:
+    name: Antigravity plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Install Antigravity CLI
+        run: |
+          curl -fsSL --retry 3 https://antigravity.google/cli/install.sh | bash -s -- --dir "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Antigravity registers the skills, the mandate rule and the MCP server from the plugin
+        run: node scripts/antigravity-harness.js
+
+  # The Cursor CLI talks only to Cursor's backend, so this harness runs on Cursor's model with a
+  # Cursor API key, which a fork's pull request doesn't get. Cursor's installer takes no version.
+  # Linux only: the Cursor CLI on Windows runs no sessionStart hook headless, so the mandate can't
+  # reach its model there (https://github.com/postmanlabs/postman-plugin/issues/83). Put the `os`
+  # matrix and the Windows install step below back once it does.
+  # Disabled for now: this job needs a CURSOR_API_KEY. Uncomment it to bring the Cursor harness back.
+  # cursor:
+  #   name: Cursor plugin / Linux
+  #   runs-on: ubuntu-latest
+  #   if: github.event.pull_request.head.repo.fork != true
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   steps:
+  #     - uses: actions/checkout@v7
+  #       with:
+  #         persist-credentials: false
+
+  #     - uses: actions/setup-node@v7
+  #       with:
+  #         node-version: lts/*
+
+  #     - name: Install the Cursor CLI
+  #       run: |
+  #         # The vendor's download host sometimes times out; a second try usually gets through.
+  #         for attempt in 1 2 3; do
+  #           curl -fsSL --retry 3 https://cursor.com/install | bash && break
+  #           [ "$attempt" -lt 3 ] || exit 1
+  #           sleep 15
+  #         done
+  #         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+  #     # Windows, once https://github.com/postmanlabs/postman-plugin/issues/83 is fixed:
+  #     # - name: Install the Cursor CLI
+  #     #   if: runner.os == 'Windows'
+  #     #   shell: pwsh
+  #     #   run: |
+  #     #     irm 'https://cursor.com/install?win32=true' | iex
+  #     #     "$env:LOCALAPPDATA\cursor-agent" >> $env:GITHUB_PATH
+
+  #     - name: Cursor delivers the mandate, loads the skill it names and connects to the MCP server
+  #       run: node scripts/cursor-harness.js
+  #       env:
+  #         CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+
+  # One check per official schema. Schemas are fetched from the vendor's source
+  # on every run, so a vendor tightening its schema fails CI here rather than
+  # at marketplace review. Files with no published schema (.kimi-plugin/plugin.json,
+  # .codex-plugin/plugin.json, .factory-plugin/*.json, .antigravity-plugin/plugin.json,
+  # .github/plugin/plugin.json, the other mcp.*.json, mcp.json, mcp_config.json, manifest.json)
+  # are covered by the `manifest` job above, Antigravity's by `agy plugin validate` in
+  # `antigravity`, and Copilot CLI's by its install in `copilot`. Codex
+  # documents its manifest in prose only and publishes no schema for it; the
+  # agent-plugins.org schema is not a substitute, since it describes the
+  # root-level `plugin.json` Agent Plugins format, which Codex selects by path
+  # and which .codex-plugin/plugin.json is deliberately not.
+  schema:
+    name: Schema / ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Claude Code marketplace
+            file: .claude-plugin/marketplace.json
+            schema: https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/claude-code-marketplace.json
+            spec: draft7
+          - name: Claude Code plugin
+            file: .claude-plugin/plugin.json
+            schema: https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/claude-code-plugin-manifest.json
+            spec: draft7
+          - name: Cursor plugin
+            file: .cursor-plugin/plugin.json
+            schema: https://raw.githubusercontent.com/cursor/plugins/main/schemas/plugin.schema.json
+            spec: draft7
+          # mcp.opencode.json is a valid OpenCode config fragment, so the config
+          # schema checks its server block. That schema $refs models.dev for the
+          # model union, and ajv resolves no reference over the network - without
+          # `ref` the run fails on "can't resolve reference", not on our file.
+          - name: OpenCode MCP config
+            file: mcp.opencode.json
+            schema: https://opencode.ai/config.json
+            ref: https://models.dev/model-schema.json
+            spec: draft2020
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Fetch schema
+        run: curl -fsSL "${{ matrix.schema }}" -o "$RUNNER_TEMP/schema.json"
+
+      - name: Fetch referenced schema
+        if: matrix.ref != ''
+        run: curl -fsSL "${{ matrix.ref }}" -o "$RUNNER_TEMP/ref.json"
+
+      - name: Validate ${{ matrix.file }}
+        run: |
+          # An array, not a string: `-r <file>` has to arrive as two argv entries,
+          # and an unquoted string to get that would also glob and word-split.
+          args=(--spec=${{ matrix.spec }} -c ajv-formats --strict=false --all-errors
+                -s "$RUNNER_TEMP/schema.json")
+          if [ -f "$RUNNER_TEMP/ref.json" ]; then
+            args+=(-r "$RUNNER_TEMP/ref.json")
+          fi
+          npx -y -p ajv-cli@5 -p ajv-formats@3 ajv validate "${args[@]}" -d "${{ matrix.file }}"
