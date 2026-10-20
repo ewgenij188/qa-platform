@@ -248,6 +248,21 @@ Common Error Guessing Scenarios:
 - Depends on tester experience
 - Difficult to standardize
 
+## Error Guessing Checklist
+
+Before closing testing, verify:
+
+- Empty input
+- Null input
+- Maximum values
+- Minimum values
+- Invalid formats
+- Duplicate actions
+- Refresh during action
+- Session expiration
+- Authorization changes
+- Network interruptions
+
 ---
 
 # Pairwise Testing
@@ -294,32 +309,64 @@ Instead of testing all combinations, generate a reduced set where every pair app
 
 ---
 
-# Error Guessing Checklist
+# Risk-Based Prioritization
 
-Before closing testing, verify:
+## Definition
 
-- Empty input
-- Null input
-- Maximum values
-- Minimum values
-- Invalid formats
-- Duplicate actions
-- Refresh during action
-- Session expiration
-- Authorization changes
-- Network interruptions
+Risk-Based Prioritization ensures testing effort is proportional to business risk. More test cases are allocated to areas with higher probability of failure combined with higher business impact.
+
+## When To Use
+
+- Time-constrained testing windows
+- Large features with many sub-areas
+- Regression test selection
+- Release risk assessment
+
+## Risk Assessment Matrix
+
+For each feature area, assess:
+
+| Factor | Levels |
+|---|---|
+| Probability of failure | High / Medium / Low |
+| Business impact | Critical / Major / Minor |
+| Existing test coverage | None / Partial / Full |
+
+## Strategy
+
+- **High risk + low coverage** → maximum test cases, 2+ independent variants
+- **High risk + partial coverage** → fill gaps, add boundary/negative cases
+- **Low risk + full coverage** → minimal regression, sample verification
+
+## Benefits
+
+- Optimizes test effort for maximum risk reduction
+- Provides justification for test scope decisions
 
 ---
 
-# QA Agent Expectations
+# Coverage Exit Criteria
 
-Before generating test cases:
+Stop generating test cases when:
+
+- All identified equivalence classes covered by at least 1 case
+- All boundary values tested (valid and invalid edges)
+- All decision table combinations covered
+- Every valid state transition covered; at least 1 invalid transition per state
+- Error guessing checklist exhausted for high-risk areas
+- High-risk areas have 2+ independent test cases
+- At least 1 positive and 1 negative scenario per endpoint/form/feature
+
+---
+
+# Technique Selection Workflow
 
 1. Identify Equivalence Classes.
 2. Identify Boundary Values.
 3. Build Decision Tables if business rules exist.
 4. Identify States and Transitions.
 5. Add Error Guessing scenarios.
-6. Consider Pairwise combinations.
-7. Explain which techniques were used.
-8. Generate final test cases.
+6. Consider Pairwise combinations for multi-parameter inputs.
+7. Apply Risk-Based Prioritization to allocate case count.
+8. Verify against Coverage Exit Criteria.
+9. Generate final test cases.

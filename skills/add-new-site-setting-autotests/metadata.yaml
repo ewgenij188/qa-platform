@@ -1,0 +1,6 @@
+name: add-site-setting-autotests
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-09-18"
+tags: ["qa-tests-v2", "backoffice", "partner-site", "kafka"]
+mcp_dependencies: ["allure-testops"]

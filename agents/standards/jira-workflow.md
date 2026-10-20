@@ -26,12 +26,15 @@ During testing:
 - Negative testing
 - Edge cases
 - Exploratory testing
+- Localization checks (all supported locales)
+- Cross-browser verification (see UI Testing Standard)
 
 After testing:
 
-- Evidence collected
-- Defects reported
+- Evidence collected (screenshots, Allure reports, logs)
+- Defects reported with proper Component/Labels
 - Regression impact assessed
+- Automation candidates flagged
 
 ---
 
@@ -43,13 +46,41 @@ Story contains:
 - Acceptance criteria
 - Scope
 - Dependencies
+- Avro/migration impact assessed
+- Feature flag strategy documented (if applicable)
 
 ---
 
 # Definition of Done
 
+### Generic
 - Acceptance criteria passed
 - Critical defects resolved
 - Regression completed
-- Automation added if required
-- Test evidence attached
+- Test evidence attached in Jira
+
+### CORE-specific gates
+- Automation added if required (mapped in qa-tests-v2, linked via Allure ID)
+- Avro schema changes merged to avro-schemas repository (if applicable)
+- DB migration tested on target environment (if applicable)
+- Featbit feature flags configured and verified (if applicable)
+- No "READY FOR RELEASE" blockers remain
+
+---
+
+# Jira Mechanics
+
+### Linking test evidence
+- Attach Allure report links, screenshots, or log excerpts directly to the story/bug
+- Link test cases via "relates to" or "tests" issue link type
+
+### Bug creation
+- Component = affected CORE service (Bang.Core, BackOffice, Partners...)
+- Labels = `core`, `qa`, `bug`
+- Set Fix Version/s to target release
+- Link to parent story/epic
+
+### Status transitions
+- Bug workflow: Open → In Progress → Resolved → Closed
+- Story verification: attach test evidence before moving to Done
+- Release ticket: verify all linked stories are Done before "READY FOR RELEASE"

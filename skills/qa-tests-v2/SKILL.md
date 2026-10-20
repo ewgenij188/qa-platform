@@ -1,4 +1,5 @@
-# qa-tests-v2 
+## Name
+qa-tests-v2 
 
 > **Actual project path:** `/Users/yauhenizhuk/IdeaProjects/qa-tests-v2`
 > (This workspace at `Documents/OpenCode/qa-tests-v2` is a config mirror only)

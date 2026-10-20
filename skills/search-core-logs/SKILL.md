@@ -81,6 +81,52 @@ Use the newest index in queries.
 }
 ```
 
+## Keyword field trap — `ignore_above: 256`
+
+`log.message.keyword` is a `keyword` subfield with `ignore_above: 256`. Any
+message longer than 256 characters is **not indexed** in the keyword field, so
+a `terms` aggregation on `log.message.keyword` silently drops them. The
+aggregation `doc_count_error_upper_bound` may still read `0` — this is NOT a
+signal that the counts are complete.
+
+Always reconcile totals. If `sum(buckets) < hits.total`, the remainder are long
+messages (>256 chars). Count them explicitly and sample them:
+
+```json
+{
+  "size": 3,
+  "query": {
+    "bool": {
+      "must": [ /* service + namespace + level + time filters */ ],
+      "must_not": [ { "exists": { "field": "log.message.keyword" } } ]
+    }
+  },
+  "_source": ["log.message"]
+}
+```
+
+Report the long-message group as its own row in the table (usually the same
+logical error as a short pattern, but with the full JSON body appended).
+
+## Reporting format (ALWAYS)
+
+Every ERROR analysis must produce **two tables**:
+
+1. **Full grouped table** — every error group, no truncation. Columns: group,
+   count, %, patterns. The last row must reconcile to the total:
+   `short patterns + long messages (>256) = hits.total`. Never hide the
+   long-message remainder — show it as an explicit row.
+
+2. **Noise table** — a separate table listing ONLY noise/FP patterns
+   (site not found, unauthorized, screen-name validation, etc.) with their
+   counts, so real issues and test noise are clearly separated. Tag each group
+   as `noise`, `fp`, or `real`.
+
+Do not cap the pattern list to a top-N that hides errors. Show all groups; if
+there are hundreds of single-occurrence patterns, aggregate them into a
+summary row (e.g. "Not found (other) — N patterns × 1") but still list the
+top offenders explicitly.
+
 ## Rules
 
 - Prefer `search_documents` with `size: 0` + aggs, or `general_api_request`

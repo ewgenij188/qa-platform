@@ -8,6 +8,7 @@ Validate:
 - Usability
 - Accessibility
 - Responsiveness
+- Localization
 
 ---
 
@@ -59,25 +60,48 @@ Verify:
 
 ---
 
-# Accessibility
+# Localization (i18n)
 
-Basic checks:
+Verify:
 
-- Visible labels
-- Keyboard navigation
-- Contrast issues
-- Focus indicators
+- All UI text translates correctly per locale
+- No hardcoded strings — labels come from i18n bundles
+- Date, time, and number formats match locale
+- RTL layout support (if applicable)
+- Minimum locales: EN, DE (production)
 
 ---
 
-# Browser Coverage
+# Accessibility (WCAG 2.1 AA)
 
-Minimum:
+Perceivable:
+- Visible labels for all form controls
+- Contrast ratio: ≥ 4.5:1 for normal text, ≥ 3:1 for large text
+- Meaningful alt text for images; ARIA labels on interactive elements
 
-- Chrome
-- Firefox
+Operable:
+- Full keyboard navigation (Tab, Enter, Escape, Arrow keys)
+- Focus indicators visible and logical
+- No keyboard traps
 
-Optional:
+Understandable:
+- Error messages descriptive, not generic
+- Language attribute set correctly
 
-- Edge
-- Safari
+---
+
+# Browser & Device Coverage
+
+**Desktop:** Chrome, Firefox, Edge, Safari
+**Mobile:** Moon (Android / iOS), BrowserStack
+**Tablet:** BrowserStack (Android / iOS) — if required by scope
+
+---
+
+# Evidence
+
+Capture on failure:
+
+- Screenshot of the page state
+- Video recording (if configured)
+- DOM snapshot at failure point
