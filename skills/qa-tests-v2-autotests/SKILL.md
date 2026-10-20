@@ -1,13 +1,10 @@
 ---
 name: qa-tests-v2-autotests
 description: >-
-  Writes CORE API autotests in qa-tests-v2 (write/extend test classes, Steps,
-  Flows, providers, tags). Mandatory branch workflow: every invocation starts by
-  asking the user whether to work on a new branch (prefix `zhuk/{taskNumber}`,
-  user supplies the task number, description completed from context) or an
-  existing local branch (user names it). Never commits/pushes without explicit
-  per-message approval. Use when writing, extending, or scaffolding qa-tests-v2
-  autotests, or when a task matches the CORE QA test-writing flow.
+  Writes/extends CORE API autotests in qa-tests-v2 (test classes, Steps, Flows,
+  providers, tags). Always asks new branch vs existing before coding; commits/
+  pushes only on explicit approval. Use when a task matches the CORE QA
+  test-writing flow.
 ---
 
 # qa-tests-v2 — Write auto-tests
@@ -63,17 +60,6 @@ Write/extend CORE API autotests in **qa-tests-v2** according to team conventions
 
 ---
 
-## Team context
-
-| Field           | Value                         |
-|-----------------|-------------------------------|
-| Name            | Yauheni Zhuk                  |
-| GitLab username | `yauheni.zhuk`                |
-| Email           | `yauheni.zhuk@winfinity.live` |
-| Branch prefix   | `zhuk/`                       |
-
----
-
 ## Allure IDs
 
 If MCP `allure-testops` **is active** (and the token is active), still **ask the user**
@@ -96,28 +82,21 @@ Allure ID (for example, `@AllureId("0")`).
 Standard CORE `@Tag` set, scope tags and component tag — see
 [reference.md](reference.md#standard-tag-set).
 
-- **All tags live in `CoreTags`** — package `live.winfinity.at.core.consts`
-  (`api/src/main/java/live/winfinity/at/core/consts/CoreTags.java`). Import them statically:
-  `import static live.winfinity.at.core.consts.CoreTags.<TAG>;`.
-  When creating a **new test class**, pick the existing component tag from `CoreTags`
-  that matches the feature; if none fits (e.g. a brand-new domain), **add a new constant
-  to `CoreTags`** first, then use it — do not hardcode tag strings in the test.
-- `@Tags` are **always formatted as a column** — one `@Tag` per line, both on the class and
-  on methods. Never write them inline on one line — see the code sample in
-  [reference.md](reference.md#standard-tag-set).
-- **Do not add `@Tag(FEATURE_*)`** (e.g. `FEATURE_BACKOFFICE`) — remove it when refactoring
-  or writing new tests, unless the user explicitly asks for it. The standard method-level
-  environment set is `CERTIFICATION`, `PREPROD`, `RELEASE`, `LATEST`, `CORE_QA`.
-- **Entity-type test classes each get a new type tag** — every test class that represents a
-  distinct entity/subtype carries its own type tag (e.g. campaign types `GENERIC_BRANDING`,
-  `BLUE_SCREEN_BRANDING`, `PHYSICAL_BRANDING`) alongside the component tag (`@Tag(BRANDING)`).
-  **When creating a new test class, add one new type-tag constant to `CoreTags` and use it on
-  the class** — do not reuse a tag from another entity (MR 6022 added
-  `BLUE_SCREEN_BRANDING = "blueScreenBranding"` this way). The tag value is the camelCased
-  entity name.
-- **Positive/smoke methods keep `@Tag(CERTIFICATION)`; `@CriticalTag` validation methods
-  drop it** — merged brandingcampaigns MRs use `{CERTIFICATION, PREPROD, RELEASE, LATEST,
-  CORE_QA}` for positives and `{PREPROD, RELEASE, LATEST, CORE_QA}` for validation.
+All tags live in `CoreTags` (`api/src/main/java/live/winfinity/at/core/consts/CoreTags.java`),
+imported statically — never hardcode tag strings. When a **new test class** has no fitting
+component tag, **add a new constant to `CoreTags`** and use it. Standard `@Tag` set, column
+formatting and the no-`FEATURE_*` rule — see
+[reference.md](reference.md#standard-tag-set).
+
+Decision rules unique to this skill:
+
+- **Entity-type test classes each get a new type tag** — a distinct entity/subtype carries its
+  own tag (e.g. `GENERIC_BRANDING`, `BLUE_SCREEN_BRANDING`, `PHYSICAL_BRANDING`) alongside the
+  component tag. **Add one new type-tag constant to `CoreTags`** for the class (tag value is the
+  camelCased entity name); do not reuse another entity's tag.
+- **Positive/smoke methods keep `@Tag(CERTIFICATION)`; `@CriticalTag` validation methods drop
+  it** — positives: `{CERTIFICATION, PREPROD, RELEASE, LATEST, CORE_QA}`, validation:
+  `{PREPROD, RELEASE, LATEST, CORE_QA}`.
 
 ---
 
@@ -185,6 +164,7 @@ api/src/test/java/live/winfinity/at/core/backoffice/<domain>/
 ```
 
 Key conventions (from the merged MR):
+
 - **Create+get orchestration goes to a flow** — `BrandingCampaignsFlows.createAndGetGenericCampaign(...)`
   wraps create→201→unwrap→get→200; the shared create→unwrap→get body lives in a **private
   `createAndGetCampaign(request)` helper on the same flow** (not in the test).
@@ -304,22 +284,15 @@ Create in dependency order — compile after each layer, not only at the end.
     - Use `assertThat(...).as("fieldName")` on each assertion.
     - **Chain instead of intermediate variables** — for a "create + verify" sequence call
       `flow.createAndGetXxx(...).verifyXxx(...)` in a chain, do not store the response in a
-      local variable just to verify it (review feedback on `CreateGenericBrandingCampaignsTests`).
-      Domain-specific checks (brandedTableName, empty sitesInfo, ...) go to separate
-      `default` verify methods in `*Assertions`, then chain them:
-      `flow.createAndGetGenericCampaign(...).verifyGenericCampaign(...).verifyBrandedTableNames(...)`.
-    - **More than 2 assertions in a row → always `SoftAssertions`** (repo style) — code
-      sample in [reference.md](reference.md#softassertions-pattern). 1–2 assertions stay
-      plain `assertThat`.
-    - **Hard-assert structural preconditions BEFORE indexing inside a soft block**
-      (REVIEW.md) — if the block indexes a collection (`getFirst()`/`get(0)`), assert
-      size/element presence **before** `assertSoftly`, then read the element into a local
-      variable. An unchecked missing element throws `NoSuchElementException` instead of a
-      readable assert report — the review bot flags this (real case:
-      `verifyBlueScreenCampaign`). Prefer collection-style assertions
-      (`extracting(...)`, `hasSize`, `first()`) where no indexing is needed; one soft
-      scope per verify method. Code sample in
-      [reference.md](reference.md#softassertions-pattern).
+      local variable just to verify it. Domain-specific checks (brandedTableName, empty
+      sitesInfo, ...) go to separate `default` verify methods in `*Assertions`, then chain
+      them.
+    - **More than 2 assertions in a row → always `SoftAssertions`** (repo style); 1–2 stay
+      plain `assertThat`. Soften-assertion and structural-precondition rules with code
+      samples — [reference.md](reference.md#softassertions-pattern). Key points: assert
+      size/element presence **before** indexing (`getFirst()`/`get(0)`) inside a soft block;
+      prefer collection-style assertions (`extracting(...)`, `hasSize`, `first()`) where no
+      indexing is needed; one soft scope per verify method.
 
 ### Phase D2 — Validation / negative test classes (separate file)
 
@@ -327,74 +300,42 @@ When the task includes **negative / validation** cases, put them in a **separate
 `*ValidationTests` class** — do NOT mix them into the positive CRUD class.
 
 > **Parameterized positive cases (`@TestTemplate`)** — when several positive cases differ
-> only by one boundary value (e.g. brandedTableName 1 char / 40 chars), merge them into a
-> single `@TestTemplate` + `ContextProvider`:
-> - Test method takes a plain value (`Integer length`), NOT a testcase record — pass the raw
->   value via `.value(length)` in the provider (review feedback).
-> - Provider (`*ContextProvider implements BaseTestTemplateInvocationProvider`) returns a
->   stream of `buildTestContext(context).displayName(TEMPLATE, name).allureId(id).value(value)
->   .scopes(criticalTag()).environments([...]).build()`, one entry per Allure ID.
-> - Do NOT put `@Tag`/`@AllureId`/`@DisplayName`/scope annotations on the `@TestTemplate`
->   method — they live in the provider.
-> - Scope is per provider, not forced to critical — the BlueScreen streamId-length positives
->   (1 / 100 chars, AllureId per case) are smoke-scoped (`scopes(smokeTag())`) and keep
->   `CERTIFICATION`.
+> only by one boundary value, merge them into a single `@TestTemplate` + `ContextProvider`.
+> The test method takes a plain value (`Integer length`), NOT a testcase record — pass the raw
+> value via `.value(length)`. Provider (`*ContextProvider implements
+> BaseTestTemplateInvocationProvider`) owns `@DisplayName`/`@AllureId`/scope/env — put NO
+> `@Tag`/`@AllureId`/`@DisplayName` on the `@TestTemplate` method. Scope is per provider, not
+> forced to critical (see [reference.md](reference.md#parameterized-positive-cases-testtemplate)).
 
 Rules for a validation test class:
 
-- **Static prerequisites only** — do **not** create a site/table in `@BeforeEach`.
-  Resolve them from static config instead:
-    - Site id via `@Value("${core.static-site-id}")`.
-    - Table id via the `CoreStaticTables` bean (`getStaticTableIdByGameType(...)`) — the
-      per-gameType property keys are listed in [Tips](#tips).
-- **No cleanup needed** — the request is rejected before any resource is created.
-- **Shared request defaults** — keep a `static final` map of required payload (e.g. the
-  valid asset keys) and a reusable base name field; each test only overrides the field
-  it is targeting.
-- **Valid-request factory** — when the same valid Generic/Dedicated/... request is rebuilt
-  in every negative test, add a factory to the request POJO (e.g.
-  `CreateBrandingCampaignRequest.validGenericBuilder(tableId, siteIds)`) that returns a
-  `@Builder`-typed builder pre-filled with the valid defaults; each negative test then
-  overrides only the field it targets (`.name(...)`, `.siteIds(List.of())`, `.tables(List.of())`,
-  `.assets(...)`, ...). Do NOT merge the test scenarios themselves — only share the builder.
-- **Type-specific builders bake the type contract** so a wrong field cannot be sent for a
-  type (merged Physical MR): `validPhysicalBuilder(tableId)` and `physical(name, table)`
-  omit `siteIds` entirely (Physical = `tableId` only; its GET then returns empty
-  `sitesInfo`/`partnersInfo`/`assets`/`settings`). BlueScreen builders always carry a
-  `streamId`. Give each campaign type its own factory instead of one generic builder with a
-  type flag.
-- **Each test** targets one validation rule. Assert the error body too (`String error = ...`
-  → `.verifyErrorBody(error)`) when the message is deterministic; a few merged cases only
-  check `.statusCodeIs400()` (e.g. an arbitrary key in BlueScreen `assets`/`settings`) —
-  match the reviewed MR. Code sample in
-  [reference.md](reference.md#validation-assertion-pattern).
-- **Isolate the targeted rule** — build the request so ONLY the rule under test is
-  violated; otherwise the expected error body depends on validation order and the test is
-  brittle (real review feedback on `CreateBlueScreenCampaignsTests`). Common traps: using
-  the same static tableId for two elements (the duplicate-value rule fires instead of the
-  count rule) and leaving a nested required field null (e.g. `streamId`) while targeting
-  the table-count rule. The count-rule test overrides `.tables(...)` with two **distinct
-  active** tables — `coreTableFlows.createActivatedTable(gameType, siteId)` (BlueScreen:
-  first table via `createSiteWithActiveTable`), each carrying a valid streamId — never
-  reuse one static id.
-- **"Without table -> 400" sends ONE table with a null `tableId`** (merged BlueScreen &
-  Physical MRs) — `validXxxBuilder(null, ...)` → expect `"The TableId field is required."`.
-  Do NOT switch to an empty `tables` list unless a live run proves the API fails on the
-  count rule first. When the valid factory pre-fills a nested collection, override the whole
-  collection (`.tables(List.of(...))`) to change it — example in
+- **Static prerequisites only** — do **not** create a site/table in `@BeforeEach`. Site via
+  `@Value("${core.static-site-id}")`, table via the `CoreStaticTables` bean
+  (`getStaticTableIdByGameType(...)`, keys listed in [Tips](#tips)). **No cleanup needed** —
+  the request is rejected before any resource is created.
+- **Shared request defaults** — keep a `static final` map of the valid payload and a reusable
+  base name; each test overrides only the field it targets.
+- **Valid-request factory** — when negative tests rebuild the same valid request, add a
+  `validXxxBuilder(...)` factory to the request POJO; each test then overrides just one field.
+  Do NOT merge the scenarios — only share the builder. Type-specific builders bake the type
+  contract (Physical omits `siteIds`, BlueScreen always carries `streamId`) — give each type
+  its own factory. Code:
   [reference.md](reference.md#valid-request-factory-for-negative-tests).
-- **`@DisplayName` names the field + expected status in plain words, no bracket prefixes** —
-  `Create Physical campaign with siteIds -> 400`, `Create BlueScreen campaign with
-  streamId 101 chars -> 400`. The merged MRs and all master brandingcampaigns tests drop
-  `[BVA]`/`[DT]`/`[EP]`/`[EG]` prefixes.
-- **Error body always goes to a local variable first** — assign the expected body to
-  `String error = "..."` (or `expectedError`) **before** the call, then pass it:
-  `.verifyErrorBody(error)`. Never inline the string literal in the call chain.
-- **Error-body text patterns** in a validation class — see [Tips](#tips) (always confirm on
-  first real run); default guesses are in
-  [reference.md](reference.md#fluentvalidation-error-body-patterns).
-- **`@DisplayName` naming** and **boundary naming** conventions — see
-  [reference.md](reference.md#displayname-naming).
+- **Each test targets one validation rule.** Assert the error body too
+  (`String error = ...` → `.verifyErrorBody(error)`) when the message is deterministic; a few
+  merged cases only check `.statusCodeIs400()`. Code sample:
+  [reference.md](reference.md#validation-assertion-pattern).
+- **Isolate the targeted rule** — build the request so ONLY the rule under test is violated
+  (e.g. count-rule test uses two **distinct active** tables, never one reused static id; a
+  nested required field like `streamId` must not be left null, else the duplicate/NotEmpty
+  rule fires first).
+- **"Without table -> 400" sends ONE table with a null `tableId`** — `validXxxBuilder(null, ...)`.
+  Do NOT switch to an empty `tables` list unless a live run proves the count rule fires first.
+- **Error body always goes to a local variable first** — assign it to `String error = "..."`
+  **before** the call; never inline the literal in the chain.
+- **`@DisplayName`** names field + expected status in plain words, no `[BVA]`/`[DT]`/`[EP]`
+  prefixes — see [reference.md](reference.md#displayname-naming). Error-body text patterns:
+  [Tips](#tips) + [reference.md](reference.md#fluentvalidation-error-body-patterns).
 - **`@CriticalTag`** by default for validation cases (not `@SmokeTag`), unless the user says
   otherwise.
 
@@ -452,16 +393,16 @@ Used when the user asks to refactor / remove duplication in existing test classe
 
 ### Where to put extracted code
 
-| What is duplicated                          | Where it goes                                                                                                              | Example                                                                                                                                                                    |
-|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| What is duplicated                          | Where it goes                                                                                                              | Example                                                                                                                                                   |
+|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Request building (builder chains)           | `public static` factory on the request record/class in `pojo/`                                                             | `CreateBrandingCampaignRequest.generic(name, siteIds, tables)`, `BrandingCampaignTable.of(tableId[, brandedTableName])`, cf. `CreateTableRequest.of(...)` |
-| Default payload constants used by factories | `public static final` on the request POJO                                                                                  | `GenericAssets.GENERIC_ASSET_KEYS`                                                                                                                                        |
-| "call step → assert status → unwrap body"   | private helper **on the domain flow** when shared across tests; private helper in the test only for one-off orchestration | `BrandingCampaignsFlows.createAndGetCampaign(request)` → create 201 → `body().campaignId()` → get 200; public wrapper `createAndGetGenericCampaign(...)` |
-| Verify a response                           | `*Assertions` interface next to the response (default method on `getSelf()`)                                               | `brandingCampaign.verifyGenericCampaign(name, siteIds, tables, assets)`                                                                                                  |
-| Site + activated table                      | existing `CoreSiteTableRelationFlows.createSiteWithActiveTable(folderId, gameType)` → `SiteTableRelation(siteId, tableId)` |                                                                                                                                                                            |
-| Table + activation on a site                | existing `CoreTableFlows.createActivatedTable(gameType, siteId)`                                                           |                                                                                                                                                                            |
-| Random names / values                       | `common/.../utils/random/RandomUtils` + prefix in `common/.../constants/PrePostfixes`                                      | see below                                                                                                                                                                  |
-| Test-specific create+verify                 | private helper in the test class                                                                                           | `createAndGetCampaign(request)`, `createAndVerify...(value)`                                                                                                               |
+| Default payload constants used by factories | `public static final` on the request POJO                                                                                  | `GenericAssets.GENERIC_ASSET_KEYS`                                                                                                                        |
+| "call step → assert status → unwrap body"   | private helper **on the domain flow** when shared across tests; private helper in the test only for one-off orchestration  | `BrandingCampaignsFlows.createAndGetCampaign(request)` → create 201 → `body().campaignId()` → get 200; public wrapper `createAndGetGenericCampaign(...)`  |
+| Verify a response                           | `*Assertions` interface next to the response (default method on `getSelf()`)                                               | `brandingCampaign.verifyGenericCampaign(name, siteIds, tables, assets)`                                                                                   |
+| Site + activated table                      | existing `CoreSiteTableRelationFlows.createSiteWithActiveTable(folderId, gameType)` → `SiteTableRelation(siteId, tableId)` |                                                                                                                                                           |
+| Table + activation on a site                | existing `CoreTableFlows.createActivatedTable(gameType, siteId)`                                                           |                                                                                                                                                           |
+| Random names / values                       | `common/.../utils/random/RandomUtils` + prefix in `common/.../constants/PrePostfixes`                                      | see below                                                                                                                                                 |
+| Test-specific create+verify                 | private helper in the test class                                                                                           | `createAndGetCampaign(request)`, `createAndVerify...(value)`                                                                                              |
 
 - Flows are for shared multi-step orchestration; a create→unwrap→get sequence **is** a valid
   flow method when several tests use it (mirror `BrandingCampaignsFlows`): public
@@ -506,31 +447,25 @@ Used when the user asks to refactor / remove duplication in existing test classe
 
 ## Cleanup — framework-managed (do NOT hand-roll)
 
-- `BaseTest.cleanUp()` runs in `@AfterEach` automatically, delegating to
-  `CleanUpHandlerService`, which iterates all beans that `extend CleanUpHandler`
-  (sorted by `getPriority()`).
-- **How to hook into cleanup:** make the Steps class `extends CleanUpHandler`, and in the
-  create method call `register(id, this::delete)` after a successful response. Then the
-  test needs **no** `@AfterEach` for those entities.
-- **Preferred style — `keepCreatedX(id)` helper:** mirror `BackofficeSiteSteps.keepCreatedSite`:
-  `create` calls `keepCreatedCampaign(response.body().campaignId())` on 201, and the helper
-  does `register(id, campaignId -> hardDelete(List.of(campaignId)).statusCodeIs204())`.
-  Assert the delete status inside the cleanup lambda — otherwise a failed delete is silently
-  treated as success and the entity leaks on the env.
-- **String id from a raw response body:** the body of a `RestResponse<String, ...>` is the
-  **raw HTTP string including quotes** (`"abc123"`). Do NOT use `.replace("\"", "")` and do
-  NOT parse with `ObjectMapper`. Use the repo's `StringResponse` wrapper pattern:
-  `sendRequestAndWrapString(...)` + a `StringResponse` subclass that strips quotes with
-  `StringUtils.substringBetween(data(), "\"")` — see
+- `BaseTest.cleanUp()` runs in `@AfterEach` automatically via `CleanUpHandlerService` over all
+  beans that `extend CleanUpHandler` (sorted by `getPriority()`).
+- **Hook into cleanup:** make the Steps class `extends CleanUpHandler`, and in the create
+  method call `register(id, this::delete)` after a success. Then the test needs **no**
+  `@AfterEach`.
+- **Preferred style — `keepCreatedX(id)` helper** (mirror `BackofficeSiteSteps.keepCreatedSite`):
+  `create` registers the id on 201; the helper does `register(id, ...::hardDelete(...))`.
+  **Assert the delete status inside the cleanup lambda** — otherwise a silent failure leaks the
+  entity. Example: [reference.md](reference.md#keepcreatedx-cleanup-helper).
+- **String id from a raw response body:** the body is the raw HTTP string **including quotes**
+  (`"abc123"`). Do NOT use `.replace("\"","")` or `ObjectMapper` — use the repo `StringResponse`
+  wrapper (`sendRequestAndWrapString(...)` + a subclass stripping quotes via
+  `StringUtils.substringBetween(data(), "\"")`). See
   [reference.md](reference.md#stringresponse-id-wrapper).
-- **Batch delete with a body:** if the delete endpoint takes a list of ids in the body
-  (e.g. hard-delete), create a small request DTO for that body and expose a
-  `delete(List<id>)` step. Register each created id against `delete(List.of(id))`.
-- **Priority:** override `getPriority()` so the child entity is deleted before its parent
-  (lower priority = deleted first). Reuse the existing priority constants
-  (`CORE_TABLE_PRIORITY`, `CORE_SITE_PRIORITY`, …).
-- **Sites/tables created via flows** already register themselves for cleanup — do not
-  manually delete them.
+- **Batch delete with a body:** create a small request DTO and a `delete(List<id>)` step;
+  register each id against `delete(List.of(id))`.
+- **Priority:** override `getPriority()` so the child is deleted before its parent (lower =
+  first). Reuse existing constants (`CORE_TABLE_PRIORITY`, `CORE_SITE_PRIORITY`, …).
+- **Sites/tables created via flows already register themselves** — do not manually delete them.
 
 ---
 
@@ -553,12 +488,3 @@ Used when the user asks to refactor / remove duplication in existing test classe
 - **Cleanup is automatic** for entities created via factory flows — see
   [Cleanup](#cleanup--framework-managed-do-not-hand-roll). Do not hand-roll `@AfterEach`.
 - **`bootstrap.properties` is ignored** — never commit or stage it.
-
----
-
-## TODO — team data to fill incrementally
-
-- [ ] Roster / roles / reviewers (if any besides the owner).
-- [ ] Who assigns Allure ID ranges and the process.
-- [ ] `knowledge-map` local path and service repo local paths.
-- [ ] Team-specific environment matrix.

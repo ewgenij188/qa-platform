@@ -64,27 +64,9 @@ More than 2 assertions in a row — always wrap in `SoftAssertions`:
 
 ```java
 SoftAssertions.assertSoftly(softAssertions ->{
-        softAssertions.
-
-assertThat(created.name()).
-
-as("name").
-
-isEqualTo(request.name());
-        softAssertions.
-
-assertThat(created.type()).
-
-as("type").
-
-isEqualTo(...);
-    softAssertions.
-
-assertThat(created.assets()).
-
-as("assets").
-
-isEqualTo(request.assets());
+        softAssertions.assertThat(created.name()).as("name").isEqualTo(request.name());
+        softAssertions.assertThat(created.type()).as("type").isEqualTo(...);
+        softAssertions.assertThat(created.assets()).as("assets").isEqualTo(request.assets());
         });
 ```
 
@@ -98,11 +80,11 @@ field checks inside `assertSoftly`:
 ```java
 assertThat(brandingCampaign.tables()).as("tables").hasSize(1);
 BrandingCampaignTable actualTable = brandingCampaign.tables().getFirst();
-SoftAssertions.assertSoftly(softAssertions -> {
-    softAssertions.assertThat(actualTable.tableId()).as("tableId").isEqualTo(table.tableId());
-    softAssertions.assertThat(actualTable.streamId()).as("streamId").isEqualTo(table.streamId());
-    // ...
-});
+SoftAssertions.assertSoftly(softAssertions ->{
+        softAssertions.assertThat(actualTable.tableId()).as("tableId").isEqualTo(table.tableId());
+        softAssertions.assertThat(actualTable.streamId()).as("streamId").isEqualTo(table.streamId());
+        // ...
+        });
 ```
 
 Without the size precondition, `getFirst()` on an empty `tables` throws
@@ -121,13 +103,7 @@ the string literal in the call chain:
 
 ```java
 String error = "\"/{path} -> '<Field>' must not be empty.\"";
-steps.create(request)
-     .
-
-statusCodeIs400()
-     .
-
-verifyErrorBody(error);
+steps.create(request).statusCodeIs400().verifyErrorBody(error);
 ```
 
 Assert the error body when the message is deterministic (the `String error = ...` →
@@ -260,9 +236,11 @@ through `sendRequestAndWrapString(...)` — mirror `PartnerIdResponseWrapper` /
 ```java
 // wrapper — under core/dto/backoffice (not the pojo package)
 public class BrandingCampaignIdResponseWrapper extends StringResponse {
+
     public BrandingCampaignIdResponseWrapper(String data) {
         super(data);
     }
+
     public String campaignId() {
         return StringUtils.substringBetween(data(), "\"");
     }
@@ -391,7 +369,13 @@ API answers `"The TableId field is required."` (merged BlueScreen & Physical tes
 ```java
 CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.validPhysicalBuilder(null).build();
 String error = "\"/backoffice/v5/createBrandingCampaign -> The TableId field is required.\"";
-brandingCampaignsV5Steps.create(request).statusCodeIs400().verifyErrorBody(error);
+brandingCampaignsV5Steps.
+
+create(request).
+
+statusCodeIs400().
+
+verifyErrorBody(error);
 ```
 
 **Count rule (two tables) — two DISTINCT active tables**, each with a valid streamId, so
@@ -420,6 +404,7 @@ Enum constants are CAPS; if the backend serializes by value, add `value` + `@Jso
 (mirror `core.enums.topwins.OrderBy`):
 
 ```java
+
 @Getter
 @AllArgsConstructor
 public enum BrandingCampaignStatus {
@@ -463,6 +448,7 @@ public interface BrandingCampaignAssertions extends ObjectAssertions<BrandingCam
 ```java
 // response record in .../brandingcampaigns/get/
 public record BrandingCampaignResponse(...) implements BrandingCampaignAssertions {
+
     @Override
     public BrandingCampaignResponse getSelf() {
         return this;
@@ -476,6 +462,7 @@ declaring its own copies:
 
 ```java
 // .../brandingcampaigns/get/BrandingCampaignResponse.java
+
 import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.BrandingCampaignTable;
 import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.PartnerInfo;
 import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.SiteInfo;
@@ -582,3 +569,14 @@ public record GenericAssets(Map<String, String> assets) {
 
 Same pattern applies to a builder-factory default that consumes the key set
 (`GenericAssets.GENERIC_ASSET_KEYS` used when building a validation payload missing one key).
+
+---
+
+## TODO — team data to fill incrementally
+
+Scratchpad (kept out of `SKILL.md` so it is not loaded on every invocation).
+
+- [ ] Roster / roles / reviewers (if any besides the owner).
+- [ ] Who assigns Allure ID ranges and the process.
+- [ ] `knowledge-map` local path and service repo local paths.
+- [ ] Team-specific environment matrix.
