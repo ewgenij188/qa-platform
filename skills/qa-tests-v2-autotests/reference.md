@@ -470,6 +470,23 @@ public record BrandingCampaignResponse(...) implements BrandingCampaignAssertion
 }
 ```
 
+The GET response **reuses the nested DTOs from `create/nested/`** — it imports
+`BrandingCampaignTable`, `SiteInfo` and `PartnerInfo` from `create.nested` instead of
+declaring its own copies:
+
+```java
+// .../brandingcampaigns/get/BrandingCampaignResponse.java
+import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.BrandingCampaignTable;
+import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.PartnerInfo;
+import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.SiteInfo;
+
+public record BrandingCampaignResponse(String id, String name,
+                                       List<SiteInfo> sitesInfo, List<PartnerInfo> partnersInfo,
+                                       List<BrandingCampaignTable> tables, ...) implements BrandingCampaignAssertions {
+    ...
+}
+```
+
 ```java
 // test — fluent call on the response
 brandingCampaign.verifyGenericCampaign(brandingCampaignName, siteIds, tables, assets);

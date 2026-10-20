@@ -147,7 +147,9 @@ of the feature domain.
    step classes already exist for this domain? What endpoints do they hit?
 4. **Search for existing POJOs** (`core/gateway/pojo/`) — do request/response DTOs and
    enums exist? Are they records or classes? How are enums serialized (strings vs
-   integers via `@JsonValue`)?
+   integers via `@JsonValue`)? If a Response/assertions for the same operation already
+   exists in a neighbouring domain (in its root or an operation folder), **reuse or add an
+   overload rather than imposing a fresh layout.**
 5. **Search for existing Flows** (`core/gateway/flows/`) — what multi-step orchestration
    is available (e.g. create-and-activate patterns)?
 6. **Search for existing tests** (`core/backoffice/<domain>/`) — what test structure is
@@ -187,6 +189,12 @@ Key conventions (from the merged MR):
   (assertions interface), not on the flow.
 - Request/response POJOs live under operation-scoped folders (`create/` for the request +
   `create/nested/`, `get/` for the GET response, delete payloads under `harddelete/`).
+  This `create/`+`get/` split is the canon for a **new** domain, not a requirement to
+  restructure an existing one — other domains keep Response+assertions in their root or in
+  an operation-named folder (`gettable/assertions/`, `getsiteresponse/assertions/`).
+- **Nested DTOs live once under `create/nested/` and are shared** — the GET response
+  (`get/BrandingCampaignResponse`) imports `BrandingCampaignTable`, `SiteInfo` and
+  `PartnerInfo` from `create.nested` rather than redeclaring them.
 - Enums and key constants (asset keys) live under `core/enums/<domain>/`.
 
 ### Phase C — Build infrastructure (bottom-up: POJOs → Steps → Test)
@@ -426,7 +434,9 @@ Used when the user asks to refactor / remove duplication in existing test classe
    copy-pasted across classes. Repo-wide duplication → extract to `api/src/main`
    (factories/flows); class-only duplication → private helper in the test class.
 3. **Reuse before creating** — search `flows/` and `pojo/` for an existing method first;
-   prefer adding an **overload** to an existing flow over a new class.
+   prefer adding an **overload** to an existing flow over a new class. If a Response /
+   assertions for the operation already exists (in its root or an operation folder), reuse
+   or extend it — do not rebuild the `create/`+`get/` layout over it.
 4. **Preserve test semantics** — don't change what the test verifies. Example: a test that
    activates two tables in one batch (`activateTablesOnSite`) must stay batched, even if
    `createActivatedTable` ×2 would look shorter. Call out any semantic change explicitly.
