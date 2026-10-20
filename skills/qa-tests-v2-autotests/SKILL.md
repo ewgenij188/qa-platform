@@ -108,10 +108,13 @@ Standard CORE `@Tag` set, scope tags and component tag — see
 - **Do not add `@Tag(FEATURE_*)`** (e.g. `FEATURE_BACKOFFICE`) — remove it when refactoring
   or writing new tests, unless the user explicitly asks for it. The standard method-level
   environment set is `CERTIFICATION`, `PREPROD`, `RELEASE`, `LATEST`, `CORE_QA`.
-- **Campaign/entity-type test classes carry a type tag too** — `brandingcampaigns` classes
-  add `@Tag(BRANDING)` plus a type tag (`GENERIC_BRANDING`, `BLUE_SCREEN_BRANDING`,
-  `PHYSICAL_BRANDING`). If the type tag does not exist yet, add the constant to `CoreTags`
-  first (MR 6022 added `BLUE_SCREEN_BRANDING = "blueScreenBranding"` this way).
+- **Entity-type test classes each get a new type tag** — every test class that represents a
+  distinct entity/subtype carries its own type tag (e.g. campaign types `GENERIC_BRANDING`,
+  `BLUE_SCREEN_BRANDING`, `PHYSICAL_BRANDING`) alongside the component tag (`@Tag(BRANDING)`).
+  **When creating a new test class, add one new type-tag constant to `CoreTags` and use it on
+  the class** — do not reuse a tag from another entity (MR 6022 added
+  `BLUE_SCREEN_BRANDING = "blueScreenBranding"` this way). The tag value is the camelCased
+  entity name.
 - **Positive/smoke methods keep `@Tag(CERTIFICATION)`; `@CriticalTag` validation methods
   drop it** — merged brandingcampaigns MRs use `{CERTIFICATION, PREPROD, RELEASE, LATEST,
   CORE_QA}` for positives and `{PREPROD, RELEASE, LATEST, CORE_QA}` for validation.
@@ -268,9 +271,9 @@ Create in dependency order — compile after each layer, not only at the end.
 14. **State** — use `List<String>` for IDs that need manual cleanup. Instance fields for
     the entities created in `@BeforeEach` (if applicable).
 15. **Cleanup** — `@AfterEach` method: call the batch-delete step for the accumulated
-    IDs, wrapped in try/catch (some may already be deleted by the test itself). For
-    entities created through framework-managed flows (sites, tables), cleanup is automatic
-    — no manual deletion needed.
+    IDs, wrapped in try/catch (some may already be deleted by the test itself). Entities
+    created through framework-managed flows clean up automatically — see
+    [Cleanup](#cleanup--framework-managed-do-not-hand-roll).
 16. **Each test method** — follow the strict annotation order
     ([reference.md](reference.md#test-method-annotation-order)).
 17. **Test method body** — follow the step-by-step orchestration the user described:
@@ -342,8 +345,8 @@ Rules for a validation test class:
 - **Static prerequisites only** — do **not** create a site/table in `@BeforeEach`.
   Resolve them from static config instead:
     - Site id via `@Value("${core.static-site-id}")`.
-    - Table id via the `CoreStaticTables` bean (`getStaticTableIdByGameType(...)`) —
-      it reads `core.static-table.<game>-table-id` from the environment properties.
+    - Table id via the `CoreStaticTables` bean (`getStaticTableIdByGameType(...)`) — the
+      per-gameType property keys are listed in [Tips](#tips).
 - **No cleanup needed** — the request is rejected before any resource is created.
 - **Shared request defaults** — keep a `static final` map of required payload (e.g. the
   valid asset keys) and a reusable base name field; each test only overrides the field
@@ -387,8 +390,8 @@ Rules for a validation test class:
 - **Error body always goes to a local variable first** — assign the expected body to
   `String error = "..."` (or `expectedError`) **before** the call, then pass it:
   `.verifyErrorBody(error)`. Never inline the string literal in the call chain.
-- **Error-body text patterns** (FluentValidation, seen across the repo) — always confirm
-  on first real run, but use these as the default guesses — see
+- **Error-body text patterns** in a validation class — see [Tips](#tips) (always confirm on
+  first real run); default guesses are in
   [reference.md](reference.md#fluentvalidation-error-body-patterns).
 - **`@DisplayName` naming** and **boundary naming** conventions — see
   [reference.md](reference.md#displayname-naming).
@@ -465,9 +468,8 @@ Used when the user asks to refactor / remove duplication in existing test classe
   `createAndGetXxx(...)` wrapper + private `createAndGetCampaign(request)` body.
 - Steps keep returning `RestResponse`; if a flow exists, it returns domain values.
 - Code comments in qa-tests-v2 are in **English** (repo style), 1–2 lines, explain "why".
-- **Test method bodies: no step-narration comments** (`// 1. Create site`). The user
-  explicitly asks to remove them — group logical blocks with blank lines instead. "Why"
-  comments only for genuinely non-obvious reasons, and even then prefer `@DisplayName`.
+  **No step-narration comments** in test method bodies (`// 1. Create site`) — see Phase D →
+  step 17: group logical blocks with blank lines instead, and prefer `@DisplayName`.
 
 ---
 
@@ -534,11 +536,12 @@ Used when the user asks to refactor / remove duplication in existing test classe
 
 ## Tips
 
-- **Site/table strategy — ALWAYS ask before writing** — for every test that needs a site
-  or table, ask the user: use static (from `@Value` / `CoreStaticTables`) or create new
-  ones (via site/table flows). Never assume one approach over the other.
+- **Site/table strategy — ALWAYS ask before writing** — ask the user for every test that
+  needs a site or table (static vs create new). Full rules in Phase D → step 17. Never
+  assume one approach over the other.
 - **Error-body text patterns** — always confirm on first real run. Use the existing tests
-  in the same domain as reference for exact FluentValidation message formats.
+  in the same domain as reference for exact FluentValidation message formats. Default-guess
+  patterns: [reference.md](reference.md#fluentvalidation-error-body-patterns).
 - **Static tables are per-gameType** — `CoreStaticTables.getStaticTableIdByGameType(GameType.X)`
   reads from `application-*.properties` (`core.static-table.<game>-table-id`).
 - **Static sites** — `@Value("${core.static-site-id}")` is available in every environment
@@ -547,8 +550,8 @@ Used when the user asks to refactor / remove duplication in existing test classe
   `core.static-site-id` is NOT present in `application-certification.properties`. If a test
   depends on a static resource that does not exist on an env, drop `@Tag(CERTIFICATION)`
   from that test's env set rather than failing at context load.
-- **Cleanup is automatic** for entities created via factory flows. Do not hand-roll
-  `@AfterEach` cleanup — the framework's `CleanUpHandlerService` handles it.
+- **Cleanup is automatic** for entities created via factory flows — see
+  [Cleanup](#cleanup--framework-managed-do-not-hand-roll). Do not hand-roll `@AfterEach`.
 - **`bootstrap.properties` is ignored** — never commit or stage it.
 
 ---

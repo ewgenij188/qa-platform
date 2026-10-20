@@ -539,11 +539,32 @@ Per-type shape (merged MRs):
 ## Fixed key list on a POJO
 
 Fixed key sets (e.g. generic campaign assets) live as a `List` on the POJO and values are
-generated from them:
+generated from them. The keys themselves are declared as an **enum** (see
+[Enum constants](#enum-constants)) under `core/enums/<domain>/`, and the POJO's key list is
+built from `.getValue()` — never inline string literals:
 
 ```java
+// core/enums/brandingcampaigns/GenericAssetsKeys.java
+@Getter
+@AllArgsConstructor
+public enum GenericAssetsKeys {
+
+    LOADING("Loading"),
+    DESKTOP("Desktop"),
+    MOBILE("Mobile");
+
+    @JsonValue
+    private final String value;
+}
+```
+
+```java
+// core/gateway/pojo/backoffice/brandingcampaigns/create/nested/GenericAssets.java
 public record GenericAssets(Map<String, String> assets) {
-    public static final List<String> GENERIC_ASSET_KEYS = List.of("Loading", "Desktop", "Mobile");
+
+    public static final List<String> GENERIC_ASSET_KEYS = List.of(GenericAssetsKeys.LOADING.getValue(),
+                                                                  GenericAssetsKeys.DESKTOP.getValue(),
+                                                                  GenericAssetsKeys.MOBILE.getValue());
 
     public static GenericAssets random() {
         Map<String, String> randomAssets = GENERIC_ASSET_KEYS.stream()
@@ -558,3 +579,6 @@ public record GenericAssets(Map<String, String> assets) {
     }
 }
 ```
+
+Same pattern applies to a builder-factory default that consumes the key set
+(`GenericAssets.GENERIC_ASSET_KEYS` used when building a validation payload missing one key).
