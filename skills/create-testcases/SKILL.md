@@ -1,6 +1,6 @@
 ---
 name: create-testcases
-description: Analyzes requirements and creates manual test cases in Allure TestOps under API | CORE | Manual | Regres New features cases. When given requirements, first presents a checklist for review — NEVER creates test cases without explicit user selection. Always asks for Jira issue number and service name. Tags: core, RFA, service name. Workflow: clones an existing test case via `POST /api/rs/testcase/{id}/clone` (body `{"projectId":1}` is REQUIRED) and patches fields rather than creating from scratch. Tree placement is controlled by the Feature/Component custom fields, NOT the case name (verified: case 100263 has Component=Core, Feature=API | Core | Manual | Regres New features cases; to move a case to a directory PATCH custom fields, do NOT rename). Scenario is opt-in on explicit user request (precondition = setup only, scenario = actions/verifications). When writing autotests, create the TestOps case FIRST and put the returned real ID directly into @AllureId — no "0" placeholder round-trip.
+description: Analyzes requirements and creates manual test cases in Allure TestOps under API | CORE | Manual | Regres New features cases. When given requirements, first presents a checklist for review — NEVER creates test cases without explicit user selection. Always asks for Jira issue number and service name. Tags: core, RFA, service name. Workflow: clones an existing test case via `POST /api/rs/testcase/{id}/clone` (body `{"projectId":1}` is REQUIRED) and patches fields rather than creating from scratch. Tree placement is controlled by the Feature/Component custom fields, NOT the case name (verified: case 100263 has Component=Core, Feature=API | Core | Manual | Regres New features cases; to move a case to a directory PATCH custom fields, do NOT rename). Scenario is ALWAYS written directly with the test steps (precondition = setup only, scenario = actions/verifications) — never ask the user whether to use scenario. When writing autotests, create the TestOps case FIRST and put the returned real ID directly into @AllureId — no "0" placeholder round-trip.
 ---
 
 # Create Test Cases in TestOps
@@ -142,7 +142,7 @@ For each selected test case, **always clone from the original source** (same sou
 4. **Patch fields**: `PATCH /api/rs/testcase/{newId}` to customize: `precondition`, `expectedResult`, `tags`, `description`, `workflowId`, `statusId`
 5. **Set tree placement (Feature/Component)**: `PATCH ... {"customFields": [{"name": "Feature", "value": "API | Core | Manual | Regres New features cases"}, {"name": "Component", "value": "Core"}]}` — copy the values from a sibling case already in the target folder (see "Tree placement"). Cloning from a source already in that folder inherits them; set them explicitly when the target folder differs from the source or when creating via MCP `create_testcase` (which starts without custom fields)
 6. **Set status and workflow**: Always `"statusId": -1` (Draft) and `"workflowId": 1` (Custom Manual) — the user changes status manually
-7. **Do NOT set the scenario by default** — leave the `scenario` field as-is (inherited from the source). Exception: on explicit user request, set the scenario via `POST /api/rs/testcase/{newId}/scenario` (see "Scenario (steps)" below).
+7. **Always set the scenario with the test steps** — write actions/verifications directly into `scenario` via `POST /api/rs/testcase/{newId}/scenario` (see "Scenario (steps)" below); leave `precondition` for SETUP only
 8. Report the new test case ID and link
 
 ### Clone-and-patch example (Python)
@@ -181,9 +181,10 @@ id1 = tc1["id"]
 api("POST", f"/api/rs/testcase/{id1}/relation", access, [])
 
 # 3. PATCH the correct name + fields + status + tree placement (Feature/Component)
+#    precondition = SETUP only; scenario = ACTIONS/VERIFICATIONS (always written)
 api("PATCH", f"/api/rs/testcase/{id1}", access, {
     "name": "API | CORE | BackOffice | My new test case",
-    "precondition": "1. Create Campaign\n2. Send POST {{GW_API_URI}}/backoffice/endpoint with body:\n{\n  \"name\": \"Test\",\n  \"type\": \"Generic\"\n}",
+    "precondition": "1. Create Campaign with status Draft",
     "expectedResult": "202 OK",
     "description": "Send {{GW_API_URI}}/backoffice/endpoint",
     "tags": [{"name": "core"}, {"name": "RFA"}, {"name": "backoffice"}],
@@ -194,9 +195,15 @@ api("PATCH", f"/api/rs/testcase/{id1}", access, {
     "statusId": -1,  # Draft
 })
 
-# NOTE: do NOT set the scenario — leave it inherited from the source
+# 4. ALWAYS set the scenario with the test steps (actions/verifications)
+api("POST", f"/api/rs/testcase/{id1}/scenario", access, {
+    "steps": [
+        {"name": "Send POST {{GW_API_URI}}/backoffice/endpoint with body:\n{\n  \"name\": \"Test\",\n  \"type\": \"Generic\"\n}",
+         "expectedResult": "202 OK", "steps": []}
+    ]
+})
 
-# 4. Repeat for next test case — CLONE FROM THE SAME SOURCE_ID
+# 5. Repeat for next test case — CLONE FROM THE SAME SOURCE_ID
 tc2 = api("POST", f"/api/rs/testcase/{SOURCE_ID}/clone", access, {
     "projectId": 1
 })
@@ -204,10 +211,15 @@ id2 = tc2["id"]
 api("POST", f"/api/rs/testcase/{id2}/relation", access, [])
 api("PATCH", f"/api/rs/testcase/{id2}", access, {
     "name": "API | CORE | BackOffice | My second test case",
-    "precondition": "1. Create valid site\n2. Prepare invalid data",
+    "precondition": "1. Create valid site",
     "expectedResult": "400 Bad Request",
     "tags": [{"name": "core"}, {"name": "RFA"}, {"name": "backoffice"}],
     "statusId": -1,  # Draft
+})
+api("POST", f"/api/rs/testcase/{id2}/scenario", access, {
+    "steps": [
+        {"name": "Send request with invalid data", "expectedResult": "400 Bad Request", "steps": []}
+    ]
 })
 
 print(f"https://testops.wnf.rocks/project/1/test-cases/{id1}")
@@ -221,7 +233,7 @@ print(f"https://testops.wnf.rocks/project/1/test-cases/{id2}")
 - **After cloning, always clear relations**: `POST /api/rs/testcase/{newId}/relation` with body `[]`
 - **After cloning, always `PATCH` the name** — this is mandatory since the clone endpoint ignores the `name` field
 - **After cloning, always set status to Draft**: `PATCH ... {"statusId": -1}` — the user changes status manually
-- **Do not set the scenario by default** — leave the `scenario` field inherited from the source; set it only on explicit user request (see "Scenario (steps)")
+- **Always set the scenario with the test steps** — write actions/verifications directly into `scenario` (see "Scenario (steps)"); `precondition` holds SETUP only. Never leave the scenario empty.
 - The `name` field should be format `API | CORE | {service} | {test name}` — it is the title only; the tree folder (`Manual | Regres New features cases`) comes from the `Feature`/`Component` custom fields, which are inherited from the clone source
 - Cloning preserves: projectId, workflowId, statusId, testLayerId, tags, preconditions, expectedResult, description, scenario, **customFields** (Feature/Component — tree placement)
 - After cloning, PATCH only the fields that differ from the source
@@ -252,12 +264,12 @@ print(f"https://testops.wnf.rocks/project/1/test-cases/{id2}")
 - Clear it with `POST /api/rs/testcase/{newId}/relation` and body `[]` (empty array)
 - There is **no DELETE endpoint** for relations — use POST with `[]`
 
-**Scenario (steps)** — only on explicit user request:
+**Scenario (steps)** — ALWAYS set on every new test case (not opt-in):
 - `POST /api/rs/testcase/{id}/scenario` with body `{"steps": [{"name": "...", "expectedResult": "...", "steps": []}]}` (verified on this instance)
 - `expectedResult` may be empty for pure action steps; nested substeps go into `steps`
 - **Split convention** (established on case 102920): `precondition` holds the SETUP only (entities to create, state to reach — ends with the state the test starts from); the scenario holds ACTIONS and VERIFICATIONS (listen/do/verify). Keep the case-level `expectedResult` as a short summary pointing to the steps for details
 - **Last scenario step has NO expected result** (template rule, verified on cases 103227/103228): do NOT attach `expectedResultSteps` to the final GET/verification step — it is a pure action ("request and find the entity"). All verification expectations live in the case-level `expectedResult` field ONLY (status code + asserted contract). Intermediate steps (create/activate) keep their own expectedResultSteps (e.g. "200 OK; save the returned id as {{...}}", "campaign status = Active")
-- Note: most existing team cases have an empty scenario (everything historically lives in `precondition`) — so scenario usage is the exception, always confirm with the user
+- Note: legacy team cases have an empty scenario (everything historically lived in `precondition`); for NEW cases always write the steps into the scenario directly — do not ask the user whether to use scenario
 
 **Status:**
 - Always set status to Draft after cloning: `PATCH ... {"statusId": -1}`
@@ -286,12 +298,12 @@ Target folders on this instance:
 After creating all test cases, fetch each one via `GET /api/rs/testcase/{id}` and verify:
 
 1. ✅ **Name** — matches the checklist and format `API | CORE | {service} | {test name}` (no `Manual | Regres...` prefix — it is NOT part of the name)
-2. ✅ **precondition** — includes step 2 with `POST {{GW_API_URI}}/backoffice/...` and request body with placeholder values; step 3 with `GET {{GW_API_URI}}/backoffice/...getBrandingCampaign?id={{brandingCampaignId}}`
+2. ✅ **precondition** — contains the SETUP only (entities to create, state to reach); the API request itself lives in the scenario, not in the precondition
 3. ✅ **expectedResult** — matches the checklist (status code + expected message)
 4. ✅ **tags** — contains `core`, `RFA`, `{service}` (lowercase)
 5. ✅ **status = Draft** — `statusId` should be `-1` (Draft); the user changes status manually
 6. ✅ **relations cleared** — `GET /api/rs/testcase/{id}/relation` should return `[]`
-7. ✅ **scenario** — not modified unless the user explicitly asked for scenario steps (then verify steps content matches the request)
+7. ✅ **scenario** — steps are ALWAYS written into the scenario (actions/verifications); verify steps content matches the checklist
 8. ✅ **tree placement** — `customFields` contain the same `Feature`/`Component` values as the sibling case in the target directory (verified via expanded `custom_fields`)
 9. ✅ **No duplicates** — search for the same test case names before/after creation; report any duplicates to the user
 
@@ -331,7 +343,7 @@ Workflow (verified on branding campaigns CORE-4104, cases 102911–102919):
 1. **Clone from the nearest sibling case of the same feature/endpoint** (keeps naming style, tags, workflow). If several cases in one batch share the shape, patch the first clone fully, then cloning the rest from that patched clone is acceptable (still clear relations on every clone).
 2. **PATCH content to mirror the future test exactly**:
    - `name`: `API | CORE | {service} | {action} {entity} ... {what is verified}` — match the test's `@DisplayName` semantics
-   - `precondition`: the full scenario as numbered steps, including exact request bodies with `{{placeholder}}` values (team style: the whole flow lives in `precondition`)
+   - `precondition`: the SETUP only (entities to create, state to reach). `scenario`: the full flow as steps (actions/verifications), including exact request bodies with `{{placeholder}}` values
    - `expectedResult`: status code + the verified contract. For Kafka checks: topic name + every asserted field with expected values (e.g. `TableName = {{brandedTableName}}`, `BrandingAssets = {...}`, explicit `null` where the type has none)
 3. **Tags**: `core`, `RFA`, service (lowercase), plus the feature tag (e.g. `BrandingRework`, id 24336).
 4. **Use the returned ID in `@AllureId` immediately**, then write the test to implement the case 1:1.
@@ -352,7 +364,7 @@ Workflow (verified on branding campaigns CORE-4104, cases 102911–102919):
 
 1. `testops_get_project` (expand `workflow`, `test_layers`, `integrations`) → confirm `Custom Manual` workflow, `Draft` status, `API Tests` layer, `Jira` integration.
 2. Find target directory values: `testops_find_testcases` with `aql: "id = {siblingId}"`, `expand: ["custom_fields"]` → copy `Feature`/`Component` (e.g. `Feature = "API | Core | Manual | Regres New features cases"`, `Component = "Core"`).
-3. `testops_create_testcase` with: `projectId: 1`, `name: "API | CORE | {service} | {test name}"`, `precondition`, `expectedResult`, optional `description`/`scenario`, `workflow: "Custom Manual"`, `status: "Draft"`, `testLayer: "API Tests"`, `tags: ["core", "RFA", "{service}", ...]`, `customFields: [{"name": "Feature", ...}, {"name": "Component", ...}]`, `issues: [{"name": "Jira", "value": "{KEY}"}]`. Scenario steps: intermediate steps keep `expectedResultSteps`, the **last (verification) step has NO `expectedResultSteps`** — expectations go only into the case-level `expectedResult` (see "Scenario (steps)").
+3. `testops_create_testcase` with: `projectId: 1`, `name: "API | CORE | {service} | {test name}"`, `precondition` (SETUP only), `expectedResult`, optional `description`, **`scenario` (ALWAYS — the test steps)**, `workflow: "Custom Manual"`, `status: "Draft"`, `testLayer: "API Tests"`, `tags: ["core", "RFA", "{service}", ...]`, `customFields: [{"name": "Feature", ...}, {"name": "Component", ...}]`, `issues: [{"name": "Jira", "value": "{KEY}"}]`. Scenario steps: intermediate steps keep `expectedResultSteps`, the **last (verification) step has NO `expectedResultSteps`** — expectations go only into the case-level `expectedResult` (see "Scenario (steps)").
 4. `testops_find_testcases` with `expand: ["custom_fields", "tags", "scenario"]` → self-review: name, precondition, expectedResult, tags, status=Draft, customFields Feature/Component, duplicates.
 
 > If the user asks to **move** an existing case to another directory, use `testops_update_testcase` and PATCH only `customFields` (Feature/Component) — do NOT rename the case (name does not affect the tree; verified 103218).
@@ -374,7 +386,7 @@ After creating the test case, show:
 - Clone body is required: `{"projectId": 1}` — all other fields are inherited.
 - **Clone endpoint ignores `name`** — always PATCH the name after cloning.
 - **Clear relations after cloning** — `POST /api/rs/testcase/{id}/relation` with `[]`.
-- **Scenario is opt-in** — by default it stays inherited from the source; fill it only when the user explicitly asks (see "Scenario (steps)").
+- **Scenario is ALWAYS written directly with the test steps** — never leave the scenario empty and never ask the user whether to use scenario; `precondition` holds SETUP only (see "Scenario (steps)").
 - **Last scenario step = no expected result inside** — the final GET/verification step is a pure action (no `expectedResultSteps`); all verification expectations go into the case-level `expectedResult` field only (see "Scenario (steps)").
 - **Always set status to Draft (-1)** — the user changes status manually.
 - **Tree placement ≠ name.** The case directory is defined by the `Feature`/`Component` custom fields, not by the name. Renaming does NOT move a case in the tree — to "move a case to folder X", PATCH `customFields` with values from a sibling case already in folder X.
@@ -382,8 +394,8 @@ After creating the test case, show:
 - Tags are lowercase: the service tag matches the service name (e.g. `backoffice`), NOT the tree folder — the tree folder comes from the `Feature` custom field.
 - Always add tags: `core`, `RFA`, and the service name (lowercase).
 - Manual test cases don't need `fullName` or `hash` — those are for automated tests only.
-- **Preconditions must include the API request** — add a step with `Send POST {{GW_API_URI}}/backoffice/{endpoint}` and the request body with placeholder values.
-- **Add a final GET step** — since createBrandingCampaign doesn't return the campaign in the response, add `Send GET {{GW_API_URI}}/backoffice/v5/getBrandingCampaign?id={{brandingCampaignId}}` as the last precondition step.
+- **Scenario steps must include the API request** — add a step with `Send POST {{GW_API_URI}}/backoffice/{endpoint}` and the request body with placeholder values.
+- **Add a final GET step** — since createBrandingCampaign doesn't return the campaign in the response, add `Send GET {{GW_API_URI}}/backoffice/v5/getBrandingCampaign?id={{brandingCampaignId}}` as the last scenario step.
 - TestOps REST API is sensitive to rate limiting — if you get 403, wait and retry.
 - **Token hygiene** — `ALRURE_API_TOKEN` lives only in the shell environment; never write token values into skill files, scripts, or the repo. In the default MCP path the token is not needed at all; the token is only used by the REST fallback. If the env var is empty and MCP is unavailable, ask the user to provide/export it for the session.
 - The list endpoint ignores `search`/`rql`/`tag`/`filter.*` params — always filter client-side (see Duplicate check).
