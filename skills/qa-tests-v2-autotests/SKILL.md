@@ -82,21 +82,26 @@ Allure ID (for example, `@AllureId("0")`).
 Standard CORE `@Tag` set, scope tags and component tag — see
 [reference.md](reference.md#standard-tag-set).
 
-All tags live in `CoreTags` (`api/src/main/java/live/winfinity/at/core/consts/CoreTags.java`),
-imported statically — never hardcode tag strings. When a **new test class** has no fitting
-component tag, **add a new constant to `CoreTags`** and use it. Standard `@Tag` set, column
-formatting and the no-`FEATURE_*` rule — see
+Tags live in tag-constant classes and are imported statically — never hardcode tag strings.
+Common CORE area tags live in `CoreTags`; BackOffice subtype/entity tags live in
+`core/consts/tags/backoffice/CoreBackofficeTags` (e.g. `DEDICATED_BRANDING`). When a **new
+test class** has no fitting subtype tag, add the constant to the matching tag class first.
+Standard `@Tag` set, column formatting and the no-`FEATURE_*` rule — see
 [reference.md](reference.md#standard-tag-set).
 
 Decision rules unique to this skill:
 
 - **Entity-type test classes each get a new type tag** — a distinct entity/subtype carries its
   own tag (e.g. `GENERIC_BRANDING`, `BLUE_SCREEN_BRANDING`, `PHYSICAL_BRANDING`) alongside the
-  component tag. **Add one new type-tag constant to `CoreTags`** for the class (tag value is the
-  camelCased entity name); do not reuse another entity's tag.
+  component tag. **Add one new type-tag constant to the matching tag class** (e.g.
+  `CoreBackofficeTags` for BackOffice subtype tags; tag value is the camelCased entity name);
+  do not reuse another entity's tag.
 - **Positive/smoke methods keep `@Tag(CERTIFICATION)`; `@CriticalTag` validation methods drop
   it** — positives: `{CERTIFICATION, PREPROD, RELEASE, LATEST, CORE_QA}`, validation:
   `{PREPROD, RELEASE, LATEST, CORE_QA}`.
+- **Branding campaign subtype tests** use the shared component tags
+  `{CORE_BACKOFFICE, CORE_BACKOFFICE_V5, BRANDING}` plus a subtype tag from
+  `CoreBackofficeTags`, e.g. `DEDICATED_BRANDING`.
 
 ---
 
@@ -179,6 +184,10 @@ Key conventions (from the merged MR):
   (`get/BrandingCampaignResponse`) imports `BrandingCampaignTable`, `SiteInfo` and
   `PartnerInfo` from `create.nested` rather than redeclaring them.
 - Enums and key constants (asset keys) live under `core/enums/<domain>/`.
+- **Dynamic API-provided configuration** (Dedicated Branding case): when valid request keys come
+  from an API response rather than a fixed enum, extend the response DTO first (`Game` →
+  `DedicatedBrandingAsset` / `DedicatedBrandingSetting`) and build payload maps from that data;
+  do not hardcode environment-dependent key lists in tests.
 
 ### Phase C — Build infrastructure (bottom-up: POJOs → Steps → Test)
 
@@ -208,7 +217,11 @@ Create in dependency order — compile after each layer, not only at the end.
       from `getSelf()`. Call verifies on the response instance, e.g.
       `brandingCampaign.verifyGenericCampaign(...)`.
 8. **Steps second** — create a `@Component` step class with methods for each endpoint.
+    - Steps call APIs directly and return `RestResponse`; flows/factories orchestrate multiple
+      steps and return domain objects.
     - Use `RestClient` + `HttpRequest.builder()`.
+    - Pick the correct REST client overload by response shape — see
+      [reference.md](reference.md#rest-client-overloads).
     - Inject `${haproxy.url}` + the RestClient.
     - Use `@Step("Core V5: ...")` for Allure reporting.
     - Match the endpoint path to the controller name (ask the user to confirm).
@@ -248,6 +261,9 @@ Create in dependency order — compile after each layer, not only at the end.
     - **Per-test random state goes to `@BeforeEach`**, not to `final` instance fields —
       declare the field, initialize it in `setUp()` (mirror `CreateGenericBrandingCampaignsTests`:
       `gameType`, `brandingCampaignName`). Keeps each test fresh under `PER_METHOD`.
+    - **Constants are first in the class** — `private static final ...` fields go before
+      injected fields. Review feedback specifically expects core class constants such as
+      `GAME_TYPE` at the top of the class body.
 14. **State** — use `List<String>` for IDs that need manual cleanup. Instance fields for
     the entities created in `@BeforeEach` (if applicable).
 15. **Cleanup** — `@AfterEach` method: call the batch-delete step for the accumulated
@@ -264,6 +280,13 @@ Create in dependency order — compile after each layer, not only at the end.
       comment.
     - **Explicit types, not `var`** — e.g. `GameType gameType = RandomUtils.randomGameType();`.
       The package does not use `var` for test data declarations.
+    - **Do not add a private helper for a single existing flow call.** If a prerequisite can be
+      created by an existing flow with all required arguments, call it directly at the usage site
+      (e.g. `coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId, gameType,
+      Category.BANKER_GAMES)`) instead of wrapping it in a local helper.
+    - **Multiline `.formatted(...)` strings need parentheses around the whole concatenation** —
+      otherwise Java applies `.formatted()` only to the last string literal. See
+      [reference.md](reference.md#multiline-formatted-strings).
     - **Status codes** — activate/update (`updateStatus`) returns **204**, reads (GET)
       return **200**. Confirm from an existing test in the same package before asserting.
     - **STOP before writing — ask the user about site/table strategy:**
@@ -278,6 +301,10 @@ Create in dependency order — compile after each layer, not only at the end.
           sites/tables beyond what static config provides.
         - **Do not guess** — wait for the user's answer before writing.
     - Create prerequisite entities (site, table, etc.) using existing flows/steps.
+      For Dedicated Branding campaigns, create fresh site/table relations with
+      `CoreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId, gameType,
+      Category.BANKER_GAMES)`; static tables do not cover all required game/category
+      combinations and may make negative tests fail during setup instead of exercising the API.
     - Perform the action under test.
     - Assert the response (status code, body fields).
     - Verify by reading back (GET the created entity and assert all relevant fields).
@@ -297,7 +324,10 @@ Create in dependency order — compile after each layer, not only at the end.
 ### Phase D2 — Validation / negative test classes (separate file)
 
 When the task includes **negative / validation** cases, put them in a **separate
-`*ValidationTests` class** — do NOT mix them into the positive CRUD class.
+`*ValidationTests` class** by default — do NOT mix them into the positive CRUD class. If you are
+extending an existing reviewed class/package that already intentionally keeps positives and
+validation together (e.g. MR 6094 Dedicated Branding), preserve that local style instead of
+splitting without request.
 
 > **Parameterized positive cases (`@TestTemplate`)** — when several positive cases differ
 > only by one boundary value, merge them into a single `@TestTemplate` + `ContextProvider`.
@@ -325,6 +355,9 @@ Rules for a validation test class:
   (`String error = ...` → `.verifyErrorBody(error)`) when the message is deterministic; a few
   merged cases only check `.statusCodeIs400()`. Code sample:
   [reference.md](reference.md#validation-assertion-pattern).
+- **Missing lookup data must fail with a useful exception** — no bare `.orElseThrow()`. Put
+  `String error = "... %s.".formatted(value)` immediately above the stream and use
+  `.orElseThrow(() -> new QaWinfinityException(error))`.
 - **Isolate the targeted rule** — build the request so ONLY the rule under test is violated
   (e.g. count-rule test uses two **distinct active** tables, never one reused static id; a
   nested required field like `streamId` must not be left null, else the duplicate/NotEmpty
@@ -333,6 +366,8 @@ Rules for a validation test class:
   Do NOT switch to an empty `tables` list unless a live run proves the count rule fires first.
 - **Error body always goes to a local variable first** — assign it to `String error = "..."`
   **before** the call; never inline the literal in the chain.
+  If the method already has another setup error variable, name the assertion message
+  `expectedError`.
 - **`@DisplayName`** names field + expected status in plain words, no `[BVA]`/`[DT]`/`[EP]`
   prefixes — see [reference.md](reference.md#displayname-naming). Error-body text patterns:
   [Tips](#tips) + [reference.md](reference.md#fluentvalidation-error-body-patterns).
@@ -437,11 +472,19 @@ Used when the user asks to refactor / remove duplication in existing test classe
   test (JUnit per-method lifecycle). **Preferred: declare the field and initialize it in
   `@BeforeEach`** (mirror `CreateGenericBrandingCampaignsTests.setUp()`) so each test
   exercises a fresh value.
+  When the test needs "any game except X", use
+  `RandomUtils.getRandomValueFromListExcluding(GameType.getLiveCasinoGameTypes(), X)` — do not
+  hand-write stream filters with `findFirst()`/`findAny()`.
 - **Asset/param key lists** — when a payload takes a fixed set of keys (e.g. generic
   campaign assets `Loading/Desktop/Mobile`), model them as `static final List<String>`
   on the POJO (e.g. `GenericAssets.GENERIC_ASSET_KEYS`), generate values with a
   `random()` factory from those keys, and reuse the list in validation (e.g. building a
   map missing one key) instead of hardcoding `Map.of(...)` in each test.
+- **API-driven key lists** — when keys come from `GET /games` (Dedicated Branding), model the
+  API fields on the `Game` DTO and add small value-object factories such as
+  `DedicatedBrandingAssets.of(game)` / `DedicatedBrandingSettings.of(game)`. Tests should call
+  these factories, not duplicate stream/map creation inline except when building expected
+  error text from the same live data.
 
 ---
 
@@ -477,6 +520,10 @@ Used when the user asks to refactor / remove duplication in existing test classe
 - **Error-body text patterns** — always confirm on first real run. Use the existing tests
   in the same domain as reference for exact FluentValidation message formats. Default-guess
   patterns: [reference.md](reference.md#fluentvalidation-error-body-patterns).
+- **Dedicated Branding campaign tests** — use
+  [reference.md](reference.md#dedicated-branding-campaigns) for the reviewed MR 6094 patterns:
+  request factories, dynamic assets/settings, `Category.BANKER_GAMES` prerequisites, full GET
+  assertion shape, and validation message formats.
 - **Static tables are per-gameType** — `CoreStaticTables.getStaticTableIdByGameType(GameType.X)`
   reads from `application-*.properties` (`core.static-table.<game>-table-id`).
 - **Static sites** — `@Value("${core.static-site-id}")` is available in every environment
