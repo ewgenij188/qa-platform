@@ -5,8 +5,6 @@ description: Analyzes a Jira ticket's requirements, builds a verification checkl
 
 # Create Checklist and Analyze
 
-> **Response language: always respond in English.** The entire report, checklist, and finding descriptions — in English.
-
 Two-phase QA workflow: **(1)** extract a verification checklist from the ticket's requirements, then **(2)** audit the implementation MR against that checklist and report prioritized findings.
 
 ## Goal
@@ -115,12 +113,28 @@ Read the ticket description and extract:
 
 Emit a checklist grouped by concern. Never add a checklist item that has no basis in the ticket; mark requirement-derived vs inference explicitly.
 
-**Checklist item format — atomic.** Each item = one action + one specific expected result, separated by an arrow `→`. One enum value / one condition branch = one separate item. Never merge multiple scenarios or multiple values into a single item — verify each independently so every item yields an unambiguous pass/fail.
+**Checklist item format — atomic and execution-oriented.** Each item = one concrete verification action + one specific expected result. Use a compact scenario title that starts with the endpoint/action under test, then the condition, then the expected result after an arrow `→` when an expected result is needed. One enum value / one condition branch = one separate item. Never merge multiple scenarios or multiple values into a single item — verify each independently so every item yields an unambiguous pass/fail.
+
+Preferred checklist wording:
+- Start with the endpoint/action: `GET recentlyPlayed`, `POST createCampaign`, `Send Finished message`, etc.
+- Add the business condition after the endpoint/action: `after Finished message`, `with 10 tables`, `without playerId`.
+- Put the expected observable result after `→`: status code, response JSON, DB state, cache state, emitted event, or absence of side effects.
+- Keep every line short and directly executable by a QA engineer.
+- Preserve the expected result from the actual requirements. Do **not** reuse the example expectations below unless they are true for the analyzed ticket.
 
 Example (do NOT merge into a single item!):
 - `Create a campaign with Status = Draft → campaign is not returned (error or empty response)`
 - `Create a campaign with Status = Active → campaign is returned (response contains all required fields)`
 - `Create a campaign with Status = Aborted → campaign is not returned (error or empty response)`
+
+Endpoint-style examples (format examples only):
+- `GET recentlyPlayed after Finished message → response contains the table in tableIds`
+- `GET recentlyPlayed after Cancelled message → response contains the table in tableIds`
+- `GET recentlyPlayed with 10 tables → response contains at most 10 tableIds`
+- `GET recentlyPlayed - invalid playerId → request is processed; response {"tableIds":[]}`
+- `GET recentlyPlayed - empty playerId → request is processed; response {"tableIds":[]}`
+- `GET recentlyPlayed - missing playerId → 400`
+- `GET recentlyPlayed - missing/invalid token → 401 (via [Authorize])`
 
 - **Applicability** — which entities/records qualify (status filters, membership filters, type-specific branches).
 - **Core rules** — each merge/precedence/selection rule, including per-field independence and tie-break behavior.

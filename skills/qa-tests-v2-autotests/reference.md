@@ -82,6 +82,7 @@ display name, then method.
 
 ```java
 @Tags({
+        @Tag(CERTIFICATION),
         @Tag(PREPROD),
         @Tag(RELEASE),
         @Tag(LATEST),
@@ -96,7 +97,9 @@ void createDedicatedCampaignWithoutAssetsAndCheckError() {
 }
 ```
 
-Positive methods that should run certification add `@Tag(CERTIFICATION)` as the first env tag:
+All methods in the `brandingcampaigns` folder — positive and `@CriticalTag` validation — run
+certification, so every method uses the same env set with `@Tag(CERTIFICATION)` as the first
+env tag:
 
 ```java
 @Tags({
@@ -107,6 +110,9 @@ Positive methods that should run certification add `@Tag(CERTIFICATION)` as the 
         @Tag(CORE_QA)
 })
 ```
+
+Outside `brandingcampaigns`, `@CriticalTag` validation methods drop `CERTIFICATION` and keep
+`{PREPROD, RELEASE, LATEST, CORE_QA}`.
 
 `@TestTemplate` methods carry only the template annotation and provider extension; the provider
 owns display name, Allure id, scope and environments:
@@ -134,14 +140,15 @@ SoftAssertions.assertSoftly(softAssertions -> {
 ```
 
 Import `org.assertj.core.api.SoftAssertions` (not the static `assertSoftly`).
-1–2 assertions stay plain `assertThat`.
+In test classes, 1–2 assertions stay `Assertions.assertThat`; import
+`org.assertj.core.api.Assertions` and do not static-import `assertThat`.
 
 **Hard structural preconditions come BEFORE the soft block** when the block indexes a
 collection (REVIEW.md). Assert the size, read the element into a local variable, then keep
 field checks inside `assertSoftly`:
 
 ```java
-assertThat(brandingCampaign.tables()).as("tables").hasSize(1);
+Assertions.assertThat(brandingCampaign.tables()).as("tables").hasSize(1);
 BrandingCampaignTable actualTable = brandingCampaign.tables().getFirst();
 SoftAssertions.assertSoftly(softAssertions -> {
     softAssertions.assertThat(actualTable.tableId()).as("tableId").isEqualTo(table.tableId());
@@ -594,10 +601,18 @@ public record BrandingCampaignResponse(String id, String name,
 
 ```java
 // test — fluent call on the response
-brandingCampaign.verifyGenericCampaign(brandingCampaignName, siteIds, tables, assets);
+brandingCampaign.verifyDraftGenericCampaign(brandingCampaignName, siteIds, tables, assets);
 ```
 
+Since MR 6344/6415 the Generic and BlueScreen verifies are status-aware (public
+`verifyDraftXxx`/`verifyActiveXxx` → private `verifyXxx(..., status)`), see
+[Update Active campaigns](#update-active-campaigns-mr-6344--6415).
+
 The verify methods are NOT placed on the flow — flows stay thin (create + orchestration only).
+
+For simpler response types (e.g. list-of-ids), each verify method can carry `@Step("Verify ...")`
+for Allure reporting and use a single `assertThat` instead of `SoftAssertions` — see
+[`@Step` on assertions interface methods](#step-on-assertions-interface-methods).
 
 ## Verify full shape (brandingcampaigns)
 
@@ -631,7 +646,8 @@ default BrandingCampaignResponse verifyPhysicalCampaign(String name, BrandingCam
 
 Per-type shape (merged MRs):
 
-- `verifyBlueScreenCampaign(name, siteIds, table)` — name, type, status DRAFT, `gameType`
+- `verifyDraftBlueScreenCampaign` / `verifyActiveBlueScreenCampaign(name, siteIds, table)` →
+  private `verifyBlueScreenCampaign(..., status)` — name, type, status, `gameType`
   null, `assets` empty, `settings` empty, `sitesInfo` ids
   (`extracting(SiteInfo::id).containsExactlyInAnyOrderElementsOf(siteIds)`), `partnersInfo`
   empty, tableId, streamId, brandedTableName.
@@ -915,9 +931,10 @@ default BrandingCampaignResponse verifyDedicatedCampaign(String name, List<Strin
 
 ### Dedicated validation cases and exact error messages
 
-Validation methods in MR 6094 are `@CriticalTag` and use the env set `{PREPROD, RELEASE,
-LATEST, CORE_QA}`. The request starts from `dedicatedBuilder(...)` and changes exactly one
-field, then asserts `statusCodeIs400()` and the deterministic error body.
+Validation methods in MR 6094 are `@CriticalTag` and use the env set `{CERTIFICATION, PREPROD,
+RELEASE, LATEST, CORE_QA}` (all `brandingcampaigns` methods run certification). The request
+starts from `dedicatedBuilder(...)` and changes exactly one field, then asserts
+`statusCodeIs400()` and the deterministic error body.
 
 Common exact messages:
 
@@ -974,6 +991,44 @@ String expectedError = "\"/backoffice/v5/createBrandingCampaign -> " + notConfig
 brandingCampaignsSteps.create(request).statusCodeIs400().verifyErrorBody(expectedError);
 ```
 
+### Update Draft Generic validation cases and exact error messages
+
+Update validation (MR 6131) mirrors the create ones: `@CriticalTag`, env set
+`{CERTIFICATION, PREPROD, RELEASE, LATEST, CORE_QA}`, endpoint
+`/backoffice/v5/updateBrandingCampaign`. The request starts from `genericBuilder(...)`,
+changes exactly one field, then asserts `statusCodeIs400()` and the deterministic error body.
+
+Common exact messages:
+
+```java
+String error = "\"/backoffice/v5/updateBrandingCampaign -> Campaign type cannot be changed.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> 'SiteIds' must not be empty.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> 'GameType' must be empty.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> 'Tables' must not be empty.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> 'StreamId' must be empty.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> '{Tables}' contains duplicate values\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> '{SiteIds}' contains duplicate values\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> Generic campaign 'Settings' must be null.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> 'Name' must not be empty.\"";
+```
+
+Dynamic messages use `.formatted(...)` with the parenthesized multiline pattern (see
+[Multiline formatted strings](#multiline-formatted-strings)). The `'BrandedTableName'` length
+error depends on the provider value, so build it from the length rather than a hardcoded number:
+
+```java
+String error = ("\"/backoffice/v5/updateBrandingCampaign -> 'BrandedTableName' must be between " +
+        "1 and 40 characters. You entered %s characters.\"")
+        .formatted(invalidBrandedTableName.length());
+```
+
+The `'Name'` 201-chars error stays static because the test feeds a fixed length:
+
+```java
+String error = "\"/backoffice/v5/updateBrandingCampaign -> The length of 'Name' must be 200 characters or " +
+        "fewer. You entered 201 characters.\"";
+```
+
 ### Name boundary provider
 
 Dedicated name length positives use `@TestTemplate` with a provider; the test method has no
@@ -1014,6 +1069,481 @@ public class CampaignNameLengthContextProvider implements BaseTestTemplateInvoca
     }
 }
 ```
+
+---
+
+## Update Active campaigns (MR 6344 / 6415)
+
+Merged classes: `update/UpdateActiveGenericCampaignsTests`, `update/UpdateActiveBlueScreenCampaignsTests`.
+
+### Class header
+
+```java
+@Tags({
+        @Tag(CORE_BACKOFFICE),
+        @Tag(CORE_BACKOFFICE_V5),
+        @Tag(BRANDING),
+        @Tag(UPDATE_ACTIVE_BLUE_SCREEN_BRANDING)
+})
+@AllureComponentCore
+@Feature("API | BackOffice | v5 | Branding campaigns | BlueScreen campaign | Update | Active")
+class UpdateActiveBlueScreenCampaignsTests extends BaseApiTest {
+
+    @LazyAutowired
+    private BrandingCampaignsFlows brandingCampaignsFlows;
+    @LazyAutowired
+    private CoreSiteTableRelationFlows coreSiteTableRelationFlows;
+    @LazyAutowired
+    private CoreTableFlows coreTableFlows;
+    @LazyAutowired
+    private BrandingCampaignsV5Steps brandingCampaignsSteps;
+    @LazyAutowired
+    private PartnersProperties partnersProperties;
+
+    @Value("${backoffice.test-folder-id}")
+    String testFolderId;
+
+    private GameType gameType;
+    private String streamId;
+
+    @BeforeEach
+    void setUp() {
+        gameType = RandomEnumUtils.randomValue(GameType.getLiveCasinoGameTypes());
+        streamId = RandomUtils.randomStreamId();
+    }
+```
+
+New tag constants in `CoreBackofficeTags`:
+
+```java
+public static final String UPDATE_ACTIVE_GENERIC_BRANDING = "updateActiveGenericBranding";
+public static final String UPDATE_ACTIVE_BLUE_SCREEN_BRANDING = "updateActiveBlueScreenBranding";
+```
+
+### Flow — create in Active state
+
+```java
+@Step("Core: Create, activate and get Generic branding campaign")
+public BrandingCampaignResponse createActivateAndGetGenericCampaign(List<String> siteIds,
+                                                                    List<BrandingCampaignTable> tables) {
+    String name = RandomUtils.randomBrandingCampaignName();
+    GenericAssets assets = GenericAssets.random();
+    CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.generic(name, siteIds, tables, assets);
+    return createActivateAndGetCampaign(request);
+}
+
+@Step("Core: Create, activate and get BlueScreen branding campaign")
+public BrandingCampaignResponse createActivateAndGetBlueScreenCampaign(List<String> siteIds,
+                                                                       BrandingCampaignTable table) {
+    String brandingCampaignName = RandomUtils.randomBrandingCampaignName();
+    CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.blueScreen(brandingCampaignName, siteIds,
+                                                                                     table);
+    return createActivateAndGetCampaign(request);
+}
+
+private BrandingCampaignResponse createActivateAndGetCampaign(CreateBrandingCampaignRequest request) {
+    String campaignId = brandingCampaignsV5Steps.create(request).statusCodeIs201().body().campaignId();
+    Assertions.assertThat(campaignId).as("campaignId").isNotNull();
+    brandingCampaignsV5Steps.updateStatus(campaignId, BrandingCampaignStatus.ACTIVE).statusCodeIs204();
+    return brandingCampaignsV5Steps.getCampaign(campaignId).statusCodeIs200().body();
+}
+```
+
+The flow uses `org.assertj.core.api.Assertions` (non-static import), same as tests.
+
+### Status-aware verify
+
+```java
+default BrandingCampaignResponse verifyDraftGenericCampaign(String name, List<String> siteIds,
+                                                            List<BrandingCampaignTable> tables,
+                                                            GenericAssets assets) {
+    return verifyGenericCampaign(name, siteIds, tables, assets, BrandingCampaignStatus.DRAFT);
+}
+
+default BrandingCampaignResponse verifyActiveGenericCampaign(String name, List<String> siteIds,
+                                                             List<BrandingCampaignTable> tables,
+                                                             GenericAssets assets) {
+    return verifyGenericCampaign(name, siteIds, tables, assets, BrandingCampaignStatus.ACTIVE);
+}
+
+private BrandingCampaignResponse verifyGenericCampaign(String name, List<String> siteIds,
+                                                       List<BrandingCampaignTable> tables,
+                                                       GenericAssets assets, BrandingCampaignStatus status) {
+    ...
+    softAssertions.assertThat(brandingCampaign.status()).as("status").isEqualTo(status);
+    ...
+}
+```
+
+Do not name the private overload after a state (`verifyDraftBlueScreenCampaign(..., status)` was
+rejected — it is called from the Active wrapper too). Reviewer accepted both this shape and a
+single public `verifyXxx(..., status)`; keep the wrappers for consistency.
+
+### Positive test — reuse the campaign's own values
+
+```java
+SiteTableRelation siteTable = coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId, gameType);
+List<String> siteIds = List.of(siteTable.siteId());
+List<BrandingCampaignTable> tables = List.of(BrandingCampaignTable.of(siteTable.tableId()));
+BrandingCampaignResponse campaign = brandingCampaignsFlows.createActivateAndGetGenericCampaign(siteIds, tables);
+
+SiteTableRelation secondSiteTable = coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId,
+                                                                                         gameType);
+List<String> updatedSiteIds = List.of(siteTable.siteId(), secondSiteTable.siteId());
+List<BrandingCampaignTable> updateTables = List.of(BrandingCampaignTable.of(siteTable.tableId()),
+                                                   BrandingCampaignTable.of(secondSiteTable.tableId()));
+GenericAssets assets = new GenericAssets(campaign.assets());
+UpdateBrandingCampaignRequest updateRequest = UpdateBrandingCampaignRequest.generic(campaign.id(),
+                                                                                    campaign.name(),
+                                                                                    updatedSiteIds,
+                                                                                    updateTables, assets);
+brandingCampaignsFlows.updateAndGetBrandingCampaign(updateRequest)
+                      .verifyActiveGenericCampaign(campaign.name(), updatedSiteIds, updateTables, assets);
+```
+
+Blank line separates the "arrange Active campaign" block from the "update + verify" block.
+BlueScreen tables use `BrandingCampaignTable.of(tableId, brandedTableName, streamId)`; a table
+without `brandedTableName` is built via `BrandingCampaignTable.builder().tableId(..).streamId(..).build()`.
+
+### Negative test — change exactly one field
+
+```java
+String tableId = coreTableFlows.createActivatedTable(gameType, partnersProperties.getPartnerSiteId()).getId();
+List<String> siteIds = List.of(partnersProperties.getPartnerSiteId());
+String brandedTableName = RandomUtils.randomBrandedTableName();
+List<BrandingCampaignTable> tables = List.of(BrandingCampaignTable.of(tableId, brandedTableName));
+BrandingCampaignResponse campaign = brandingCampaignsFlows.createActivateAndGetGenericCampaign(siteIds, tables);
+
+String newBrandingCampaignName = RandomUtils.randomBrandingCampaignName();
+GenericAssets assets = new GenericAssets(campaign.assets());
+UpdateBrandingCampaignRequest updateRequest = UpdateBrandingCampaignRequest.generic(campaign.id(),
+                                                                                    newBrandingCampaignName,
+                                                                                    siteIds, tables, assets);
+String error = "\"/backoffice/v5/updateBrandingCampaign -> Campaign name cannot be changed while it is Active" +
+        ".\"";
+brandingCampaignsSteps.update(updateRequest).statusCodeIs400().verifyErrorBody(error);
+```
+
+Wrong (bot review, MR 6344/6415): `genericBuilder(campaign.id(), siteIds, tableId)` /
+`blueScreenBuilder(...)` for a name/table test — the builder sets a random `name`, random assets,
+random `streamId` and drops `brandedTableName`, so the request breaks several Active rules at
+once and the test depends on backend validation order. If a builder is unavoidable, override
+`.name(campaign.name())` and the original table.
+
+Count rule — keep the existing table as is, add a valid second table:
+
+```java
+String secondTableId = coreTableFlows.createActivatedTable(gameType, partnersProperties.getPartnerSiteId())
+                                     .getId();
+List<BrandingCampaignTable> updatedTables = List.of(table,
+                                                    BrandingCampaignTable.builder()
+                                                                         .tableId(secondTableId)
+                                                                         .streamId(RandomUtils.randomStreamId())
+                                                                         .build());
+String error = "\"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign requires exactly one table.\"";
+```
+
+Duplicates — the same id twice:
+
+```java
+List<String> duplicateSiteIds = List.of(partnersProperties.getPartnerSiteId(),
+                                        partnersProperties.getPartnerSiteId());
+```
+
+### Active-specific error messages
+
+```java
+String error = ("\"/backoffice/v5/updateBrandingCampaign -> Table %s cannot be updated while the campaign " +
+        "is Active. Only adding new tables or removing existing ones is allowed.\"").formatted(tableId);
+String error = "\"/backoffice/v5/updateBrandingCampaign -> Campaign name cannot be changed while it is Active" +
+        ".\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> Assets and Settings cannot be changed while the " +
+        "campaign is Active.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign requires exactly one table.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign 'Assets' must be null.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign 'Settings' must be null.\"";
+String error = "\"/backoffice/v5/updateBrandingCampaign -> 'StreamId' must not be empty.\"";
+```
+
+"Table %s cannot be updated" fires for any change of an existing table's `brandedTableName`
+(set, change, remove) or `streamId`. Adding/removing whole tables and sites is allowed on Active.
+
+### Naming (merged)
+
+| Kind     | Method                                                        | DisplayName                                                                    |
+|----------|---------------------------------------------------------------|--------------------------------------------------------------------------------|
+| Positive | `updateActiveGenericCampaignRemoveSiteAndTable`               | `Update Active Generic campaign: remove one site and table`                    |
+| Positive | `updateActiveBlueScreenCampaignChangeTableWithBrandedTableName` | `Update Active BlueScreen campaign: change table with brandedTableName`      |
+| Negative | `updateActiveGenericCampaignChangeNameCheckError`             | `Update Active Generic campaign: change Name and check error`                  |
+| Negative | `updateActiveBlueScreenCampaignAddSecondTableCheckError`      | `Update Active BlueScreen campaign: add second table and check error`          |
+
+---
+
+## Awaitility patterns
+
+When a test depends on async processing (Kafka message consumption, cache invalidation), use
+**Awaitility** to poll. Put the wait logic in a **Flow method**, not in the test. Import
+`org.awaitility.Awaitility` and `org.awaitility.Durations`.
+
+### Wait until condition becomes true (`until`)
+
+Poll until the API response satisfies a condition, then return the response body. The lambda
+inside `until()` stays inline and simple — avoid `Predicate`, `AtomicReference`, and complex
+state (review feedback MR 6205):
+
+```java
+@Step("Core: Wait until recently played contains all tableIds {1}")
+public RecentlyPlayedResponse waitRecentlyPlayedContains(String playerId, List<String> tableIds) {
+    return Awaitility.with()
+                     .pollInterval(Durations.ONE_SECOND)
+                     .await()
+                     .pollInSameThread()
+                     .atMost(Durations.TEN_SECONDS)
+                     .until(() -> recentlyPlayed(playerId),
+                            r -> r.statusCodeIs200().body().tableIds().containsAll(tableIds))
+                     .body();
+}
+
+private RestResponse<RecentlyPlayedResponse, String> recentlyPlayed(String playerId) {
+    return playerStatsV6Steps.recentlyPlayed(RecentlyPlayedParams.of(playerId));
+}
+```
+
+### Settle-window wait (`during`)
+
+When a negative async assertion cannot distinguish "not yet consumed" from "consumed and
+absent" (e.g. a zero-bet round must NOT appear in recently played), use `during()` to assert
+the condition stays true for a settle window. Add a comment explaining why the settle window
+is needed:
+
+```java
+@Step("Core: Wait until recently played does not contain tableId {1}")
+public RecentlyPlayedResponse waitRecentlyPlayedDoesNotContain(String playerId, String tableId) {
+    // A zero-bet round never adds a tableId, so an empty snapshot can mean either "consumed and absent"
+    // or "not yet consumed" — both look empty. Wait for a 5s settle window in which the endpoint stays
+    // empty without the table ever surfacing, then assert absence to avoid a false pass.
+    Awaitility.with()
+              .pollInterval(Durations.ONE_SECOND)
+              .await()
+              .pollInSameThread()
+              .during(Durations.FIVE_SECONDS)
+              .atMost(Durations.TEN_SECONDS)
+              .until(() -> recentlyPlayed(playerId),
+                     r -> !r.statusCodeIs200().body().tableIds().contains(tableId));
+    return recentlyPlayed(playerId).statusCodeIs200().body();
+}
+```
+
+Key rules:
+- **Keep `until()` lambdas inline** — no `Predicate` variables, no `AtomicReference`.
+- **`pollInSameThread()`** — always include it (avoids thread-safety issues with RestClient).
+- **`during()` vs `until()`** — `until()` for positive expectations (data appears),
+  `during()` for negative expectations (data must NOT appear, need settle window).
+- **Consolidate wait methods** — use `List<String> tableIds` parameter to handle both single
+  and multiple table checks, not separate overloads (review feedback MR 6205).
+
+---
+
+## QueryParamsConverter pattern
+
+For GET endpoints with query parameters, create a `Params` class implementing
+`QueryParamsConverter` under `core/params/<service>/<domain>/`. Use `@Getter`, `@Builder`,
+`@AllArgsConstructor`, a static `.of()` factory, and a nested `Param` class for param name
+constants:
+
+```java
+@Getter
+@Builder
+@AllArgsConstructor
+public class RecentlyPlayedParams implements QueryParamsConverter {
+
+    private String playerId;
+
+    public static RecentlyPlayedParams of(String playerId) {
+        return RecentlyPlayedParams.builder().playerId(playerId).build();
+    }
+
+    @Override
+    public List<QueryParam> convert() {
+        List<QueryParam> result = new ArrayList<>();
+        Optional.ofNullable(playerId).ifPresent(playerId -> result.add(new QueryParam(Param.PLAYER_ID, playerId)));
+        return result;
+    }
+
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    static class Param {
+
+        static final String PLAYER_ID = "playerId";
+    }
+}
+```
+
+In the Steps class, pass the params via `.objectQueryParams(params)`:
+
+```java
+@Step("Core: Get recently played tables")
+public RestResponse<RecentlyPlayedResponse, String> recentlyPlayed(RecentlyPlayedParams params) {
+    HttpRequest request = HttpRequest.builder()
+                                     .method(Method.GET)
+                                     .baseUrl(haproxyUrl)
+                                     .path(BASE_PATH, V_6, RECENTLY_PLAYED)
+                                     .objectQueryParams(params)
+                                     .build();
+    return haproxyClient.sendRequest(request, RecentlyPlayedResponse.class, String.class);
+}
+```
+
+---
+
+## `@Step` on assertions interface methods
+
+Assertion methods in `*Assertions` interfaces can carry `@Step` annotations for Allure
+reporting. This makes each verification visible as a separate step in the Allure report.
+Use `{0}`, `{1}` for parameter placeholders in the step name:
+
+```java
+public interface RecentlyPlayedResponseAssertions extends ObjectAssertions<RecentlyPlayedResponse> {
+
+    @Step("Verify recently played contains table {0}")
+    default RecentlyPlayedResponse verifyTableIdsContains(String tableId) {
+        assertThat(getSelf().tableIds()).as("tableIds").contains(tableId);
+        return getSelf();
+    }
+
+    @Step("Verify recently played table ids are empty")
+    default RecentlyPlayedResponse verifyTableIdsEmpty() {
+        assertThat(getSelf().tableIds()).as("tableIds").isEmpty();
+        return getSelf();
+    }
+
+    @Step("Verify recently played table ids are exactly {0}")
+    default RecentlyPlayedResponse verifyTableIdsContainsExactly(String... tableIds) {
+        assertThat(getSelf().tableIds()).as("tableIds").containsExactly(tableIds);
+        return getSelf();
+    }
+}
+```
+
+Key rules:
+- Each verify method returns `getSelf()` for chaining.
+- Inside assertions interfaces, `static import assertThat` is allowed (unlike test classes
+  which use `Assertions.assertThat`).
+- Simple single-assertion verifies (contains, isEmpty, containsExactly) do NOT need
+  `SoftAssertions` — the 2+ threshold applies when multiple fields are checked in one method.
+
+---
+
+## Session-based tests (Kafka / game rounds)
+
+When the test exercises game-round processing (Kafka messages, player stats), use
+`corePlayerFlows.startSession(gameType)` to create a player session. The session auto-selects
+a static table for the game type — no site/table creation needed.
+
+```java
+private static final GameType RNG_GAME_TYPE = GameType.RNG_ROULETTE;
+private static final GameType SGLM_GAME_TYPE = GameType.ROULETTE;
+
+Session session = corePlayerFlows.startSession(RNG_GAME_TYPE);
+String tableId = session.tableId();
+String playerId = session.internalUserId();
+```
+
+For cross-session tests (same user, different game type / table), create a second session from
+the same `User` via `Session.of(tableId, gameType, user)`:
+
+```java
+Session rngSession = corePlayerFlows.startSession(RNG_GAME_TYPE);
+User user = rngSession.user();
+String sglmTableId = coreStaticTables.getStaticTableIdByGameType(SGLM_GAME_TYPE);
+Session sglmSession = Session.of(sglmTableId, SGLM_GAME_TYPE, user);
+```
+
+### Kafka message helpers in tests
+
+Extract message-sending logic into private helpers on the test class. Each helper is one
+message type; SGLM rounds require `sendStartMessage()` before `sendFinishMessage()` /
+`sendCancelMessage()` (the game loop is Start → Finish/Cancel):
+
+```java
+private void sendRngFinishWithPositiveBet(Session session) {
+    String gameId = RandomUtils.randomGameId();
+    RngGameData gameData = RngGameData.of(session);
+    coreRngStatisticFlows.sendFinishRngMessage(session, gameId, gameData);
+}
+
+private void sendSglmFinishWithPositiveBet(Session session) {
+    String gameId = RandomUtils.randomGameId();
+    coreStatisticFlows.sendStartMessage(session.tableId(), gameId, SGLM_GAME_TYPE);
+    coreStatisticFlows.sendFinishMessage(session, gameId);
+}
+
+private void sendSglmCancelWithPositiveBet(Session session) {
+    String gameId = RandomUtils.randomGameId();
+    coreStatisticFlows.sendStartMessage(session.tableId(), gameId, SGLM_GAME_TYPE);
+    coreStatisticFlows.sendCancelMessage(gameId, session.tableId(), SGLM_GAME_TYPE,
+                                         List.of(PlayerDataMessage.of(session)));
+}
+```
+
+### Versioned Steps class for non-BackOffice services
+
+Use `@RequiredArgsConstructor` + `private final` injection (not `@LazyAutowired`) for Steps
+and Flows, with `@Value` for config properties. Path segments as `static final` constants:
+
+```java
+@Component
+@RequiredArgsConstructor
+public class PlayerStatsV6Steps {
+
+    private static final String BASE_PATH = "/playerstats";
+    private static final String V_6 = "v6";
+    private static final String RECENTLY_PLAYED = "/recentlyPlayed";
+
+    private final RestClient haproxyClient;
+
+    @Value("${haproxy.url}")
+    private String haproxyUrl;
+}
+```
+
+### Two coexisting versions of one endpoint (MR 6262)
+
+When both `v1` and `v2` of the same endpoint are tested, the reviewer requires one Steps
+class per version, the version baked into `BASE_PATH`, and version expressed by **package**
+(never by class name or a `version` method parameter):
+
+```
+api/src/main/java/live/winfinity/at/core/gateway/steps/replays/
+├── v1/ReplaysV1Steps.java   // BASE_PATH = "/replays/api/v1"; also keeps shared read endpoints
+└── v2/ReplaysV2Steps.java   // BASE_PATH = "/replays/api/v2"; internal/backoffice client
+
+api/src/test/java/live/winfinity/at/core/replays/
+├── v1/ReplaysPreviewImageTests.java   // @Feature("API | Replays | v1 | Preview image")
+└── v2/ReplaysPreviewImageTests.java   // @Feature("API | Replays | v2 | Preview image")
+                                       // NOTE: class name has NO "V2" token
+```
+
+```java
+// v1 — unversioned read endpoint keeps its own constant
+private static final String BASE_PATH = "/replays/api/v1";
+private static final String REPLAYS_API = "/replays/api";   // getReplay lives here, unversioned
+// v2 — version in the path, authorized client
+private static final String BASE_PATH = "/replays/api/v2";
+```
+
+Rules:
+
+- **Do NOT** put both versions in one class with `postShort(..., String version)` overloads or
+  `uploadPreviewImageV2(...)` method-name suffixes — the reviewer rejects both; split classes.
+- **Test class names drop the version** (`v2/ReplaysShortTests`, not `ReplaysV2ShortTests`);
+  `@Feature` uses lowercase `v1`/`v2`.
+- A v2 test that needs a shared read step (`search`, `getReplay`) autowires `ReplaysV1Steps`
+  separately — the common read method stays in the v1 class, it is not duplicated into v2.
+- **Authorized/internal endpoints** (v2 internal/backoffice here) use a dedicated RestClient
+  bean fed by a `*TokenProvider` + `BearerTokenInterceptor`; inject that client in the v2
+  Steps. A 403 on such an endpoint usually means the Steps used the wrong (unauthorized)
+  client, or the interceptor bean was wired by the wrong name — bean params resolve by name,
+  so the constructor/`@Bean` parameter name must match the intended interceptor bean.
 
 ---
 

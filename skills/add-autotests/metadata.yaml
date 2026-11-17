@@ -1,0 +1,6 @@
+name: add-autotests
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-10-28"
+tags: ["qa", "qa-tests-v2", "autotests", "core-api"]
+mcp_dependencies: []
