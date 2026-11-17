@@ -601,12 +601,11 @@ public record BrandingCampaignResponse(String id, String name,
 
 ```java
 // test — fluent call on the response
-brandingCampaign.verifyDraftGenericCampaign(brandingCampaignName, siteIds, tables, assets);
+brandingCampaign.verifyGenericCampaign(brandingCampaignName, siteIds, tables, assets);
 ```
 
-Since MR 6344/6415 the Generic and BlueScreen verifies are status-aware (public
-`verifyDraftXxx`/`verifyActiveXxx` → private `verifyXxx(..., status)`), see
-[Update Active campaigns](#update-active-campaigns-mr-6344--6415).
+When the same entity is verified in several states, make the verify status-aware — see
+[State-dependent operation tests](#state-dependent-operation-tests).
 
 The verify methods are NOT placed on the flow — flows stay thin (create + orchestration only).
 
@@ -646,8 +645,7 @@ default BrandingCampaignResponse verifyPhysicalCampaign(String name, BrandingCam
 
 Per-type shape (merged MRs):
 
-- `verifyDraftBlueScreenCampaign` / `verifyActiveBlueScreenCampaign(name, siteIds, table)` →
-  private `verifyBlueScreenCampaign(..., status)` — name, type, status, `gameType`
+- BlueScreen verify (`(name, siteIds, table[, status])`) — name, type, status, `gameType`
   null, `assets` empty, `settings` empty, `sitesInfo` ids
   (`extracting(SiteInfo::id).containsExactlyInAnyOrderElementsOf(siteIds)`), `partnersInfo`
   empty, tableId, streamId, brandedTableName.
@@ -1072,210 +1070,129 @@ public class CampaignNameLengthContextProvider implements BaseTestTemplateInvoca
 
 ---
 
-## Update Active campaigns (MR 6344 / 6415)
+## State-dependent operation tests
 
-Merged classes: `update/UpdateActiveGenericCampaignsTests`, `update/UpdateActiveBlueScreenCampaignsTests`.
+Template for testing an operation on an entity that was first moved to a non-initial state
+(e.g. update of an Active entity). Placeholders: `<Operation>`, `<State>`, `<Transition>`,
+`<Type>`, `<Entity>`, `<Status>`. Concrete names come from the domain — look them up in the
+repo, do not copy them from the example.
 
-### Class header
+### Class header (template)
 
 ```java
 @Tags({
-        @Tag(CORE_BACKOFFICE),
-        @Tag(CORE_BACKOFFICE_V5),
-        @Tag(BRANDING),
-        @Tag(UPDATE_ACTIVE_BLUE_SCREEN_BRANDING)
+        @Tag(<COMPONENT_TAG>),
+        @Tag(<COMPONENT_VERSION_TAG>),
+        @Tag(<AREA_TAG>),
+        @Tag(<OPERATION>_<STATE>_<TYPE>_<DOMAIN>)
 })
 @AllureComponentCore
-@Feature("API | BackOffice | v5 | Branding campaigns | BlueScreen campaign | Update | Active")
-class UpdateActiveBlueScreenCampaignsTests extends BaseApiTest {
-
-    @LazyAutowired
-    private BrandingCampaignsFlows brandingCampaignsFlows;
-    @LazyAutowired
-    private CoreSiteTableRelationFlows coreSiteTableRelationFlows;
-    @LazyAutowired
-    private CoreTableFlows coreTableFlows;
-    @LazyAutowired
-    private BrandingCampaignsV5Steps brandingCampaignsSteps;
-    @LazyAutowired
-    private PartnersProperties partnersProperties;
-
-    @Value("${backoffice.test-folder-id}")
-    String testFolderId;
-
-    private GameType gameType;
-    private String streamId;
-
-    @BeforeEach
-    void setUp() {
-        gameType = RandomEnumUtils.randomValue(GameType.getLiveCasinoGameTypes());
-        streamId = RandomUtils.randomStreamId();
-    }
+@Feature("API | <Service> | <version> | <Feature> | <Type> <entity> | <Operation> | <State>")
+class <Operation><State><Type><Entity>sTests extends BaseApiTest {
 ```
 
-New tag constants in `CoreBackofficeTags`:
+New tag constant in the matching tag class:
 
 ```java
-public static final String UPDATE_ACTIVE_GENERIC_BRANDING = "updateActiveGenericBranding";
-public static final String UPDATE_ACTIVE_BLUE_SCREEN_BRANDING = "updateActiveBlueScreenBranding";
+public static final String <OPERATION>_<STATE>_<TYPE>_<DOMAIN> = "<operation><State><Type><Domain>";
 ```
 
-### Flow — create in Active state
+### Flow — create in the target state (template)
 
 ```java
-@Step("Core: Create, activate and get Generic branding campaign")
-public BrandingCampaignResponse createActivateAndGetGenericCampaign(List<String> siteIds,
-                                                                    List<BrandingCampaignTable> tables) {
-    String name = RandomUtils.randomBrandingCampaignName();
-    GenericAssets assets = GenericAssets.random();
-    CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.generic(name, siteIds, tables, assets);
-    return createActivateAndGetCampaign(request);
+@Step("Core: Create, <transition> and get <Type> <entity>")
+public <Entity>Response create<Transition>AndGet<Type><Entity>(<prerequisites>) {
+    <Create>Request request = <Create>Request.<type>(<random name>, <prerequisites>, <random payload>);
+    return create<Transition>AndGet<Entity>(request);
 }
 
-@Step("Core: Create, activate and get BlueScreen branding campaign")
-public BrandingCampaignResponse createActivateAndGetBlueScreenCampaign(List<String> siteIds,
-                                                                       BrandingCampaignTable table) {
-    String brandingCampaignName = RandomUtils.randomBrandingCampaignName();
-    CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.blueScreen(brandingCampaignName, siteIds,
-                                                                                     table);
-    return createActivateAndGetCampaign(request);
-}
-
-private BrandingCampaignResponse createActivateAndGetCampaign(CreateBrandingCampaignRequest request) {
-    String campaignId = brandingCampaignsV5Steps.create(request).statusCodeIs201().body().campaignId();
-    Assertions.assertThat(campaignId).as("campaignId").isNotNull();
-    brandingCampaignsV5Steps.updateStatus(campaignId, BrandingCampaignStatus.ACTIVE).statusCodeIs204();
-    return brandingCampaignsV5Steps.getCampaign(campaignId).statusCodeIs200().body();
+private <Entity>Response create<Transition>AndGet<Entity>(<Create>Request request) {
+    String id = <entity>Steps.create(request).statusCodeIs201().body().<id>();
+    Assertions.assertThat(id).as("id").isNotNull();
+    <entity>Steps.updateStatus(id, <Status>.<STATE>).statusCodeIs204();
+    return <entity>Steps.get(id).statusCodeIs200().body();
 }
 ```
 
-The flow uses `org.assertj.core.api.Assertions` (non-static import), same as tests.
-
-### Status-aware verify
+### Status-aware verify (template)
 
 ```java
-default BrandingCampaignResponse verifyDraftGenericCampaign(String name, List<String> siteIds,
-                                                            List<BrandingCampaignTable> tables,
-                                                            GenericAssets assets) {
-    return verifyGenericCampaign(name, siteIds, tables, assets, BrandingCampaignStatus.DRAFT);
+default <Entity>Response verify<State><Type><Entity>(<expected fields>) {
+    return verify<Type><Entity>(<expected fields>, <Status>.<STATE>);
 }
 
-default BrandingCampaignResponse verifyActiveGenericCampaign(String name, List<String> siteIds,
-                                                             List<BrandingCampaignTable> tables,
-                                                             GenericAssets assets) {
-    return verifyGenericCampaign(name, siteIds, tables, assets, BrandingCampaignStatus.ACTIVE);
-}
-
-private BrandingCampaignResponse verifyGenericCampaign(String name, List<String> siteIds,
-                                                       List<BrandingCampaignTable> tables,
-                                                       GenericAssets assets, BrandingCampaignStatus status) {
-    ...
-    softAssertions.assertThat(brandingCampaign.status()).as("status").isEqualTo(status);
-    ...
+private <Entity>Response verify<Type><Entity>(<expected fields>, <Status> status) {
+    <Entity>Response actual = getSelf();
+    SoftAssertions.assertSoftly(softAssertions -> {
+        ...
+        softAssertions.assertThat(actual.status()).as("status").isEqualTo(status);
+    });
+    return actual;
 }
 ```
 
-Do not name the private overload after a state (`verifyDraftBlueScreenCampaign(..., status)` was
-rejected — it is called from the Active wrapper too). Reviewer accepted both this shape and a
-single public `verifyXxx(..., status)`; keep the wrappers for consistency.
+The private method carries no state in its name — it is called from every state wrapper.
 
-### Positive test — reuse the campaign's own values
+### Test bodies (template)
+
+Positive — arrange the entity in the state, blank line, then build the request from the
+response values, changing only what the scenario allows:
 
 ```java
-SiteTableRelation siteTable = coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId, gameType);
-List<String> siteIds = List.of(siteTable.siteId());
-List<BrandingCampaignTable> tables = List.of(BrandingCampaignTable.of(siteTable.tableId()));
+<prerequisites>
+<Entity>Response entity = <entity>Flows.create<Transition>AndGet<Type><Entity>(<prerequisites>);
+
+<new values for the scenario>
+<Update>Request request = <Update>Request.<type>(entity.id(), entity.name(), <changed fields>, <unchanged fields from entity>);
+<entity>Flows.updateAndGet<Entity>(request)
+             .verify<State><Type><Entity>(entity.name(), <expected fields>);
+```
+
+Negative — same arrange, change exactly one field, everything else from the response:
+
+```java
+<Update>Request request = <Update>Request.<type>(entity.id(), <changed field>, <all other fields from entity>);
+String error = "\"/<endpoint> -> <message>\"";
+<entity>Steps.update(request).statusCodeIs400().verifyErrorBody(error);
+```
+
+Wrong: a `<type>Builder(...)` that randomizes name/payload/nested values — the request breaks
+several state rules at once and the test depends on validation order. If a builder is
+unavoidable, override every non-target field back to the entity's values.
+
+Count rule — existing items unchanged + one fully valid extra item. Duplicate rule — the same
+id twice (`List.of(id, id)`).
+
+### Naming (template)
+
+| Kind     | Method                                              | DisplayName                                                  |
+|----------|-----------------------------------------------------|--------------------------------------------------------------|
+| Positive | `<operation><State><Type><Entity><Scenario>`        | `<Operation> <State> <Type> <entity>: <scenario>`            |
+| Negative | `<operation><State><Type><Entity><Scenario>CheckError` | `<Operation> <State> <Type> <entity>: <scenario> and check error` |
+
+### Example (branding campaigns, update Active)
+
+Merged reference implementation: `update/UpdateActive*CampaignsTests` in
+`core/backoffice/brandingcampaigns`. Short illustration of the negative pattern:
+
+```java
 BrandingCampaignResponse campaign = brandingCampaignsFlows.createActivateAndGetGenericCampaign(siteIds, tables);
 
-SiteTableRelation secondSiteTable = coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId,
-                                                                                         gameType);
-List<String> updatedSiteIds = List.of(siteTable.siteId(), secondSiteTable.siteId());
-List<BrandingCampaignTable> updateTables = List.of(BrandingCampaignTable.of(siteTable.tableId()),
-                                                   BrandingCampaignTable.of(secondSiteTable.tableId()));
+String newName = RandomUtils.randomBrandingCampaignName();
 GenericAssets assets = new GenericAssets(campaign.assets());
-UpdateBrandingCampaignRequest updateRequest = UpdateBrandingCampaignRequest.generic(campaign.id(),
-                                                                                    campaign.name(),
-                                                                                    updatedSiteIds,
-                                                                                    updateTables, assets);
-brandingCampaignsFlows.updateAndGetBrandingCampaign(updateRequest)
-                      .verifyActiveGenericCampaign(campaign.name(), updatedSiteIds, updateTables, assets);
+UpdateBrandingCampaignRequest request = UpdateBrandingCampaignRequest.generic(campaign.id(), newName,
+                                                                              siteIds, tables, assets);
+String error = "\"/backoffice/v5/updateBrandingCampaign -> Campaign name cannot be changed while it is Active.\"";
+brandingCampaignsSteps.update(request).statusCodeIs400().verifyErrorBody(error);
 ```
 
-Blank line separates the "arrange Active campaign" block from the "update + verify" block.
-BlueScreen tables use `BrandingCampaignTable.of(tableId, brandedTableName, streamId)`; a table
-without `brandedTableName` is built via `BrandingCampaignTable.builder().tableId(..).streamId(..).build()`.
+Active-specific error messages seen in this domain (confirm on a live run):
 
-### Negative test — change exactly one field
-
-```java
-String tableId = coreTableFlows.createActivatedTable(gameType, partnersProperties.getPartnerSiteId()).getId();
-List<String> siteIds = List.of(partnersProperties.getPartnerSiteId());
-String brandedTableName = RandomUtils.randomBrandedTableName();
-List<BrandingCampaignTable> tables = List.of(BrandingCampaignTable.of(tableId, brandedTableName));
-BrandingCampaignResponse campaign = brandingCampaignsFlows.createActivateAndGetGenericCampaign(siteIds, tables);
-
-String newBrandingCampaignName = RandomUtils.randomBrandingCampaignName();
-GenericAssets assets = new GenericAssets(campaign.assets());
-UpdateBrandingCampaignRequest updateRequest = UpdateBrandingCampaignRequest.generic(campaign.id(),
-                                                                                    newBrandingCampaignName,
-                                                                                    siteIds, tables, assets);
-String error = "\"/backoffice/v5/updateBrandingCampaign -> Campaign name cannot be changed while it is Active" +
-        ".\"";
-brandingCampaignsSteps.update(updateRequest).statusCodeIs400().verifyErrorBody(error);
-```
-
-Wrong (bot review, MR 6344/6415): `genericBuilder(campaign.id(), siteIds, tableId)` /
-`blueScreenBuilder(...)` for a name/table test — the builder sets a random `name`, random assets,
-random `streamId` and drops `brandedTableName`, so the request breaks several Active rules at
-once and the test depends on backend validation order. If a builder is unavoidable, override
-`.name(campaign.name())` and the original table.
-
-Count rule — keep the existing table as is, add a valid second table:
-
-```java
-String secondTableId = coreTableFlows.createActivatedTable(gameType, partnersProperties.getPartnerSiteId())
-                                     .getId();
-List<BrandingCampaignTable> updatedTables = List.of(table,
-                                                    BrandingCampaignTable.builder()
-                                                                         .tableId(secondTableId)
-                                                                         .streamId(RandomUtils.randomStreamId())
-                                                                         .build());
-String error = "\"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign requires exactly one table.\"";
-```
-
-Duplicates — the same id twice:
-
-```java
-List<String> duplicateSiteIds = List.of(partnersProperties.getPartnerSiteId(),
-                                        partnersProperties.getPartnerSiteId());
-```
-
-### Active-specific error messages
-
-```java
-String error = ("\"/backoffice/v5/updateBrandingCampaign -> Table %s cannot be updated while the campaign " +
-        "is Active. Only adding new tables or removing existing ones is allowed.\"").formatted(tableId);
-String error = "\"/backoffice/v5/updateBrandingCampaign -> Campaign name cannot be changed while it is Active" +
-        ".\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> Assets and Settings cannot be changed while the " +
-        "campaign is Active.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign requires exactly one table.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign 'Assets' must be null.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign 'Settings' must be null.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> 'StreamId' must not be empty.\"";
-```
-
-"Table %s cannot be updated" fires for any change of an existing table's `brandedTableName`
-(set, change, remove) or `streamId`. Adding/removing whole tables and sites is allowed on Active.
-
-### Naming (merged)
-
-| Kind     | Method                                                        | DisplayName                                                                    |
-|----------|---------------------------------------------------------------|--------------------------------------------------------------------------------|
-| Positive | `updateActiveGenericCampaignRemoveSiteAndTable`               | `Update Active Generic campaign: remove one site and table`                    |
-| Positive | `updateActiveBlueScreenCampaignChangeTableWithBrandedTableName` | `Update Active BlueScreen campaign: change table with brandedTableName`      |
-| Negative | `updateActiveGenericCampaignChangeNameCheckError`             | `Update Active Generic campaign: change Name and check error`                  |
-| Negative | `updateActiveBlueScreenCampaignAddSecondTableCheckError`      | `Update Active BlueScreen campaign: add second table and check error`          |
+- `Table %s cannot be updated while the campaign is Active. Only adding new tables or removing existing ones is allowed.`
+  — any change of an existing table's attributes; adding/removing whole tables/sites is allowed.
+- `Campaign name cannot be changed while it is Active.`
+- `Assets and Settings cannot be changed while the campaign is Active.`
+- `<Type> campaign requires exactly one table.`
 
 ---
 

@@ -104,12 +104,11 @@ Decision rules unique to this skill:
 - **Branding campaign subtype tests** use the shared component tags
   `{CORE_BACKOFFICE, CORE_BACKOFFICE_V5, BRANDING}` plus a subtype tag from
   `CoreBackofficeTags`, e.g. `DEDICATED_BRANDING`.
-- **State-specific update classes get an operation+state+type tag** (MR 6344/6415) — e.g.
-  `UPDATE_ACTIVE_GENERIC_BRANDING = "updateActiveGenericBranding"`,
-  `UPDATE_ACTIVE_BLUE_SCREEN_BRANDING`; class tags are
-  `{CORE_BACKOFFICE, CORE_BACKOFFICE_V5, BRANDING, UPDATE_ACTIVE_<TYPE>_BRANDING}` (no separate
-  subtype tag). `@Feature` path:
-  `"API | BackOffice | v5 | Branding campaigns | <Type> campaign | Update | Active"`.
+- **State-specific operation classes get an operation+state+type tag** — constant
+  `<OPERATION>_<STATE>_<TYPE>_<DOMAIN>` with a camelCased value in the matching tag class; the
+  class carries the shared component tags plus this tag (no separate subtype tag). `@Feature`
+  path: `"API | {Service} | {version} | {Feature} | <Type> <entity> | <Operation> | <State>"`.
+  Template/example: [reference.md](reference.md#state-dependent-operation-tests).
 
 ---
 
@@ -367,11 +366,10 @@ Create in dependency order — compile after each layer, not only at the end.
           `CoreTableFlows`). Auto-cleanup via framework. Needed when the test
           must control table properties (gameType, etc.) or needs multiple distinct
           sites/tables beyond what static config provides.
-        - **Partner site + fresh table** (update-Active pattern, MR 6344/6415) — site
-          `partnersProperties.getPartnerSiteId()`, table
-          `coreTableFlows.createActivatedTable(gameType, partnersProperties.getPartnerSiteId()).getId()`.
-          Used when each test mutates its own campaign/table but needs only one site; switch to
-          `createSiteWithActiveTable(testFolderId, gameType)` when the scenario needs a second site.
+        - **Configured partner site + fresh table** — site id from the partner properties
+          bean, table created and activated on it by the existing table flow. Used when each
+          test mutates its own entity/table but needs only one site; switch to the
+          site+table relation flow when the scenario needs a second site.
         - **Do not guess** — wait for the user's answer before writing.
     - **Session-based tests** — when the test needs a player session (game rounds, Kafka
       messages, player stats), use `corePlayerFlows.startSession(gameType)` which auto-selects
@@ -404,7 +402,7 @@ Create in dependency order — compile after each layer, not only at the end.
       before `sendFinishMessage()`/`sendCancelMessage()` (the game loop is Start→Finish/Cancel).
     - Use `Assertions.assertThat(...).as("fieldName")` on each assertion in test classes;
       import `org.assertj.core.api.Assertions` — do not static-import `assertThat`. Same in
-      Flows (`BrandingCampaignsFlows` switched to `Assertions.assertThat` in MR 6415).
+      Flows (`Assertions.assertThat(...)`, no static import).
     - **Chain instead of intermediate variables** — for a "create + verify" sequence call
       `flow.createAndGetXxx(...).verifyXxx(...)` in a chain, do not store the response in a
       local variable just to verify it. Same for wait→verify chains:
@@ -473,42 +471,40 @@ Rules for a validation test class:
   [Tips](#tips) + [reference.md](reference.md#fluentvalidation-error-body-patterns).
 - **`@CriticalTag`** by default for validation cases (not `@SmokeTag`), unless the user says
   otherwise.
-- **Duplicate-value tests must really duplicate** — `List.of(siteId, siteId)`, never
-  `List.of(siteId, tableId)` (a non-existent id fails for another reason).
+- **Duplicate-value tests must really duplicate** — the same id twice (`List.of(id, id)`),
+  never two different ids (a non-existent id fails for another reason).
 
-### Phase D3 — State-dependent update tests (e.g. Active campaigns)
+### Phase D3 — State-dependent operation tests (entity in a non-initial state)
 
-Pattern from MR 6344 (Generic) / 6415 (BlueScreen) — `update/UpdateActive<Type>CampaignsTests`.
-Code: [reference.md](reference.md#update-active-campaigns-mr-6344--6415).
+Applies when an operation (e.g. update) behaves differently depending on the entity state
+(e.g. Draft vs Active). Template + example: [reference.md](reference.md#state-dependent-operation-tests).
 
-- **One class per state × type** (`UpdateDraft*` / `UpdateActive*`) — positives (`@SmokeTag`)
-  and negatives (`@CriticalTag`) live together in it, matching the neighbouring update classes.
-- **Prerequisite in the state goes to a flow** — `createActivateAndGet<Type>Campaign(siteIds,
-  tables|table)`: random name/assets inside, shared private `createActivateAndGetCampaign(request)`
-  (create 201 → id not null → `updateStatus(ACTIVE)` 204 → get 200). Never repeat
-  create + activate in tests (bot review). Tests read `campaign.id()`, `campaign.name()`,
-  `campaign.assets()` from the returned response.
-- **Status-aware verify** — public `verifyDraft<Type>Campaign(...)` /
-  `verifyActive<Type>Campaign(...)` delegate to a **private** interface method
-  `verify<Type>Campaign(..., BrandingCampaignStatus status)`; the private one carries no state
-  in its name (reviewer). Rename existing callers (create/update-draft tests) in the same MR.
+- **One class per state × type** — `<Operation><State><Type><Entity>sTests`; positives
+  (`@SmokeTag`) and negatives (`@CriticalTag`) live together, matching neighbouring classes of
+  the same operation.
+- **Bringing the entity into the state goes to a flow** — public
+  `create<Transition>AndGet<Type><Entity>(...)` (random name/payload inside) delegating to a
+  shared private `create<Transition>AndGet<Entity>(request)`: create → assert id → status
+  transition → get. Never repeat create + transition in tests. Tests take `id`, `name` and the
+  payload from the returned response.
+- **Status-aware verify** — public `verify<State><Type><Entity>(...)` wrappers delegate to one
+  **private** interface method `verify<Type><Entity>(..., <Status> status)`; the private method
+  has no state in its name. Rename existing callers in the same MR.
 - **Isolate the rule against the live entity** — in every negative request keep ALL fields of
-  the created campaign (`campaign.name()`, `new GenericAssets(campaign.assets())`, the original
-  `tables`/`table` with its `brandedTableName`/`streamId`) and change only the field under test.
-  `*Builder` factories generate a random `name`/assets/`streamId` → the request silently also
-  breaks "name cannot change while Active"/"table cannot be updated". Prefer the full factory
-  (`UpdateBrandingCampaignRequest.generic/blueScreen(campaign.id(), campaign.name(), ...)`); if a
-  builder is used, override `.name(campaign.name())` and the table back to the original.
-- **Count rule ("requires exactly one table")** — keep the first table unchanged and give the
-  added table a valid `streamId`, so only the count rule fires.
-- **Validator-level rules are state-agnostic** (`must not be empty`, `must be null`, duplicates)
-  — they fire before the status branch, so on Active they only duplicate the Draft class. Add
-  them only when the TestOps cases prescribe them; ask the user otherwise.
-- **Naming** — method `update<State><Type>Campaign<Scenario>` (positives) /
-  `...<Scenario>CheckError` (negatives); `@DisplayName("Update Active <Type> campaign:
-  <scenario>[ and check error]")`. The method name must describe the actual scenario (bot
-  flagged `...AddTableWithBrandedTableName` on a remove-site test). One rule = one test: drop a
-  test whose trigger and error duplicate another one.
+  the created entity (name, payload, nested items with all their attributes) and change only
+  the field under test. `*Builder` factories that randomize name/payload/nested values break
+  other state rules at once and make the test depend on validation order — prefer the full
+  factory fed with the response values; if a builder is unavoidable, override the fields back
+  to the originals.
+- **Count rules** — keep existing items unchanged and make the added item fully valid, so only
+  the count rule fires.
+- **Validator-level rules are state-agnostic** (`must not be empty`, `must be null`,
+  duplicates) — they fire before the state check and only duplicate the initial-state class.
+  Add them only when the TestOps cases prescribe them; ask the user otherwise.
+- **Naming** — method `<operation><State><Type><Entity><Scenario>` (positives) /
+  `...<Scenario>CheckError` (negatives); `@DisplayName("<Operation> <State> <Type> <entity>:
+  <scenario>[ and check error]")`. The method name must describe the actual scenario. One rule =
+  one test: drop a test whose trigger and error duplicate another one.
 
 ### Phase E — Build and verify
 
@@ -575,9 +571,9 @@ Used when the user asks to refactor / remove duplication in existing test classe
 | Request building (builder chains)           | `public static` factory on the request record/class in `pojo/`                                                             | `CreateBrandingCampaignRequest.generic(name, siteIds, tables)`, `BrandingCampaignTable.of(tableId[, brandedTableName])`, cf. `CreateTableRequest.of(...)` |
 | Default payload constants used by factories | `public static final` on the request POJO                                                                                  | `GenericAssets.GENERIC_ASSET_KEYS`                                                                                                                        |
 | "call step → assert status → unwrap body"   | private helper **on the domain flow** when shared across tests; private helper in the test only for one-off orchestration  | `BrandingCampaignsFlows.createAndGetCampaign(request)` → create 201 → `body().campaignId()` → get 200; public wrapper `createAndGetGenericCampaign(...)`  |
-| Verify a response                           | `*Assertions` interface next to the response (default method on `getSelf()`)                                               | `brandingCampaign.verifyDraftGenericCampaign(name, siteIds, tables, assets)`                                                                              |
-| Same verify for different entity states     | public `verifyDraftX`/`verifyActiveX` wrappers → **private** interface method `verifyX(..., status)`                       | `verifyActiveBlueScreenCampaign(name, siteIds, table)` → `verifyBlueScreenCampaign(..., ACTIVE)`                                                         |
-| Create entity in a non-initial state        | public flow method + shared private helper on the flow                                                                     | `createActivateAndGetGenericCampaign(siteIds, tables)` → private `createActivateAndGetCampaign(request)`                                                  |
+| Verify a response                           | `*Assertions` interface next to the response (default method on `getSelf()`)                                               | `brandingCampaign.verifyGenericCampaign(name, siteIds, tables, assets)`                                                                                   |
+| Same verify for different entity states     | public `verify<State><Type><Entity>` wrappers → **private** interface method `verify<Type><Entity>(..., status)`           | `verify<State>Xxx(...)` → `verifyXxx(..., <Status>.<STATE>)`                                                                                              |
+| Create entity in a non-initial state        | public flow method + shared private helper on the flow                                                                     | `create<Transition>AndGet<Type><Entity>(...)` → private `create<Transition>AndGet<Entity>(request)`                                                       |
 | Site + activated table                      | existing `CoreSiteTableRelationFlows.createSiteWithActiveTable(folderId, gameType)` → `SiteTableRelation(siteId, tableId)` |                                                                                                                                                           |
 | Table + activation on a site                | existing `CoreTableFlows.createActivatedTable(gameType, siteId)`                                                           |                                                                                                                                                           |
 | Random names / values                       | `common/.../utils/random/RandomUtils` + prefix in `common/.../constants/PrePostfixes`                                      | see below                                                                                                                                                 |
