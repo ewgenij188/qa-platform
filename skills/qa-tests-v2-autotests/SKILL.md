@@ -44,7 +44,7 @@ Write/extend CORE API autotests in **qa-tests-v2** according to team conventions
 ## Git rules
 
 - **No commit, no push** unless the user explicitly approves in the **current** message.
-- Commits: `{TICKET}: Short message`.
+- Commits: `[{TICKET}] Short message` (matches `git log` of the repo).
 - Squash merge to `master`.
 - `bootstrap.properties` — ignored (local-only config, never committed). It usually has
   local modifications; if a reset/revert wiped them, warn the user — there is no copy in git.
@@ -249,12 +249,21 @@ Create in dependency order — compile after each layer, not only at the end.
 8. **Steps second** — create a `@Component` step class with methods for each endpoint.
     - Steps call APIs directly and return `RestResponse`; flows/factories orchestrate multiple
       steps and return domain objects.
-    - Use `RestClient` + `HttpRequest.builder()`.
+    - Use `RestClient` + `HttpRequest.builder()`; build the URL with `.path(<SEGMENTS>...)`,
+      never by string concatenation.
     - Pick the correct REST client overload by response shape — see
-      [reference.md](reference.md#rest-client-overloads).
-    - Inject `${haproxy.url}` + the RestClient.
+      [reference.md](reference.md#rest-client-overloads). When `verifyErrorBody` compares a
+      string, the error type is `String.class`.
+    - Inject `${haproxy.url}` + the RestClient. Several `RestClient` beans exist, so the
+      injection must pin one (`REVIEW.md`): an explicit constructor with
+      `@Qualifier("<beanName>") RestClient restClient`, or — with `@RequiredArgsConstructor` —
+      a field named exactly like the bean (`haproxyClient`). A `@Qualifier` on a Lombok field
+      is **not** copied to the constructor (no `copyableAnnotations` in `lombok.config`).
+    - **Version lives in `BASE_PATH`** (`BASE_PATH = "/<service>/v<N>"`), not in a separate
+      `V_<N>` constant — the class name already carries the version.
     - Use `@Step("Core: ...")` or `@Step("Core V<N>: ...")` for Allure reporting — match
-      the version if the Step class is versioned.
+      the version if the Step class is versioned. Placeholders in `@Step` (Steps **and** Flows)
+      use **parameter names** — `{tableIds}`, `{playerId}` — never `{0}`/`{1}`.
     - Match the endpoint path to the controller name (ask the user to confirm).
     - **Query params** for GET endpoints, **body** for POST/PUT/DELETE.
     - **QueryParamsConverter for GET params** — when a GET endpoint takes query parameters,
@@ -272,6 +281,9 @@ Create in dependency order — compile after each layer, not only at the end.
       collision disambiguate with a version suffix (`<Entity>sSteps` → `<Entity>sV<N>Steps`).
       POJO records/enums are not beans and do not collide.
       Example: [reference.md](reference.md#bean-name-collision-check).
+    - **A new `@Component` never extends another `@Component`** — it creates duplicate beans
+      assignable to the parent type (`REVIEW.md`). Share code via composition instead.
+    - **No per-test state in a singleton bean** — Steps/Flows are shared across parallel tests.
 
 ### Phase D — Write the test class
 
@@ -283,7 +295,8 @@ Create in dependency order — compile after each layer, not only at the end.
     the Steps/Flows are versioned; deeper levels add `| <Type> <entity> | <Operation> | <State>`
     when the domain splits classes that way.
 11. **Extend `BaseApiTest`** — provides Spring context, cleanup, and the `api` JUnit tag
-    via `@AllureLayerApi`.
+    via `@AllureLayerApi`. Do **not** repeat `@AllureLayerApi` on the test class. The test
+    class is package-private (no `public`).
 12. **Inject dependencies** — `@LazyAutowired` (never `@Autowired`), `@Value("${<property>}")`
     for configured ids (folders, static sites).
 13. **Constants and helpers** — extract repeated data (e.g. required payload maps for
@@ -294,8 +307,9 @@ Create in dependency order — compile after each layer, not only at the end.
     - **Per-test random state goes to `@BeforeEach`**, not to `final` instance fields —
       declare the field, initialize it in `setUp()` (e.g. a random game type, a random entity
       name). Keeps each test fresh under `PER_METHOD`.
-    - **Constants are first in the class** — `private static final ...` fields (e.g. a fixed
-      `GAME_TYPE`) go before injected fields (review feedback).
+    - **Member order** — constants (`private static final`) → `@LazyAutowired` fields →
+      `@Value` fields → instance fields → `@BeforeEach` → tests → private helpers
+      (review feedback).
 14. **State** — use `List<String>` for IDs that need manual cleanup. Instance fields for
     the entities created in `@BeforeEach` (if applicable).
 15. **Cleanup** — `@AfterEach` method: call the batch-delete step for the accumulated
@@ -303,7 +317,11 @@ Create in dependency order — compile after each layer, not only at the end.
     created through framework-managed flows clean up automatically — see
     [Cleanup](#cleanup--framework-managed-do-not-hand-roll).
 16. **Each test method** — follow the strict annotation order
-    ([reference.md](reference.md#test-method-annotation-order)).
+    ([reference.md](reference.md#test-method-annotation-order)). Exactly **one** scope
+    annotation: `@SmokeTag` already includes critical and extended — never stack
+    `@SmokeTag` + `@CriticalTag`. API version goes into `@Feature` only, never into
+    `@DisplayName` or the method name. `@DisplayName` states the observable result, not
+    domain jargon.
 17. **Test method body** — follow the step-by-step orchestration the user described:
     - **No step-narration comments** — do NOT write `// 1. Create <x>`, `// 2. Get <y>` etc.
       The user explicitly rejects them. Group logical blocks with a blank line instead
@@ -349,21 +367,14 @@ Create in dependency order — compile after each layer, not only at the end.
     - Perform the action under test.
     - Assert the response (status code, body fields).
     - Verify by reading back (GET the created entity and assert all relevant fields).
-    - **Asynchronous / eventually-consistent endpoints** — when the result depends on async
-      processing (Kafka consumption, cache invalidation), use **Awaitility** to poll.
-      Put the wait logic in a Flow method, not in the test. Two patterns:
-      - **`until()`** — poll until a condition becomes true (e.g. response contains expected
-        data). See [reference.md](reference.md#awaitility-patterns).
-      - **`during()`** — wait for a settle window where the condition stays true continuously
-        (e.g. a zero-bet round must NOT appear, and we need to wait long enough to be sure
-        the message was consumed). See [reference.md](reference.md#awaitility-patterns).
-      Avoid `Predicate`, `AtomicReference`, and complex helper state — keep the `until()`
-      lambda inline and simple (review feedback).
-    - **Kafka-message-based tests** — when the action-under-test is sending Kafka messages
-      through the statistic flows rather than calling REST endpoints, extract message-sending
-      logic into **private helpers on the test class** — `send<GameKind><Message>With<Condition>(session)`.
-      Keep each helper focused on one message type; live-game rounds require a start message
-      before finish/cancel (the game loop is Start→Finish/Cancel).
+    - **Asynchronous / eventually-consistent endpoints** — before each step that depends on
+      an earlier sent message, **decide whether the service has already consumed it** — see
+      [Wait for service consumption](#wait-for-service-consumption). Never `Thread.sleep` /
+      `Waiter.wait()` (`REVIEW.md`).
+    - **Kafka-message-based tests** — see [Kafka rules](#kafka-rules). Message-sending logic goes
+      into **private helpers on the test class** — `send<GameKind><Message>With<Condition>(session)`,
+      one helper per message type, returning the generated `gameId`; live-game rounds require a
+      start message before finish/cancel (the game loop is Start→Finish/Cancel).
     - Use `Assertions.assertThat(...).as("fieldName")` on each assertion in test classes;
       import `org.assertj.core.api.Assertions` — do not static-import `assertThat`. Same in
       Flows (`Assertions.assertThat(...)`, no static import).
@@ -383,6 +394,52 @@ Create in dependency order — compile after each layer, not only at the end.
       size/element presence **before** indexing (`getFirst()`/`get(0)`) inside a soft block;
       prefer collection-style assertions (`extracting(...)`, `hasSize`, `first()`) where no
       indexing is needed; one soft scope per verify method.
+    - **AssertJ idioms** — `hasSize(n)`, not `size().isEqualTo(n)`; `isZero()`, not
+      `isEqualTo(0)`; `isEmpty()` for `[]` (empty, not null).
+    - **No `@Step` on `*Assertions` interface methods** — TestOps already shows a step per
+      interface method; an extra `@Step` duplicates it.
+
+#### Wait for service consumption
+
+Async results are polled with **Awaitility** in a **Flow method**, never in the test. Templates:
+[reference.md](reference.md#awaitility-patterns).
+
+- **Consumption already proven → no poll.** If an earlier step received the service's
+  response message (Kafka listener `waitUntilReceived()`), the next read follows directly.
+- **Poll only** when nothing in the test proved consumption yet **and** the next call reads
+  state that changes only after consumption (a read right after a send).
+- **A validation call that fails before consumption** (missing id → 400) does not wait.
+- **`until()` asserting inside the condition** (`statusCodeIs200()` throws) **must add
+  `.ignoreExceptions()`** — `REVIEW.md` rejects pollers that assert without ignoring
+  exceptions (one flaky 400 aborts an otherwise passing wait). Add `.alias("...")` for a
+  readable timeout. Fixed bounds: 1 s interval, 10 s limit, `pollInSameThread()`, re-fetch
+  inside `until`, return the body. No `Predicate` / `AtomicReference` — lambda inline.
+- **"Must NOT appear" / empty-list negatives cannot poll until empty** — empty is also the
+  state before consumption. Prove consumption another way first (a response message, a field
+  that does change), then assert absence. If nothing proves it, **ask the user**. Offer
+  `.during(Durations.FIVE_SECONDS)` only as an option: it is weaker (known limitation), used
+  only when the user picks it, with a comment on the method explaining why. Never add
+  `.during(...)` to a presence wait.
+- **Second send on the same entity** (two rounds on one table) — the presence wait is already
+  true after the first send. Keep the second round's `gameId` and prove that round was
+  processed (e.g. wait until a history/game-details read returns it) before the read under
+  test. If no read can prove it, ask the user.
+
+#### Kafka rules
+
+- **`@KafkaTag` on each method** that produces or consumes Kafka, not on the class
+  (`REVIEW.md`: tightest correct scope). Put it on the class only when every `@Test` in it
+  touches Kafka. HTTP-only methods in the same class stay untagged.
+- **Listener before the send** — create the listener first, then send; otherwise the message
+  can be missed.
+- **Topic from the enum** (`CoreTopic` or another `WinfinityTopic`), never a raw topic string.
+- Use the `KafkaListenersManager` interface; the condition variable is named `condition`;
+  timeout `Durations.TEN_SECONDS`; `listener.clear()` between waits on the same listener.
+- **Field checks go on the assertion interface after `waitUntilReceived()`**, not as
+  `fieldNotNull()` inside the condition.
+- A `Check <Message> in topic <topic>` scenario line is asserted as "message received with the
+  fields that line names".
+  Template: [reference.md](reference.md#kafka-listener-pattern).
 
 ### Phase D2 — Validation / negative test classes (separate file)
 
@@ -393,8 +450,9 @@ validation together, preserve that local style instead of splitting without requ
 
 > **Parameterized positive cases (`@TestTemplate`)** — when several positive cases differ
 > only by one boundary value, merge them into a single `@TestTemplate` + `ContextProvider`.
-> The test method takes a plain value (`Integer length`), NOT a testcase record — pass the raw
-> value via `.value(length)`. Provider (`*ContextProvider implements
+> A single varying value is passed raw (`Integer length` via `.value(length)`), NOT wrapped in a
+> testcase record; a record is only for rows with several fields. Never `@ParameterizedTest` /
+> `@ValueSource` / `@MethodSource`. Provider (`*ContextProvider implements
 > BaseTestTemplateInvocationProvider`) owns `@DisplayName`/`@AllureId`/scope/env — put NO
 > `@Tag`/`@AllureId`/`@DisplayName` on the `@TestTemplate` method. Scope is per provider, not
 > forced to critical (see [reference.md](reference.md#parameterized-positive-cases-testtemplate)).
@@ -563,7 +621,8 @@ Concrete examples per row: [reference.md](reference.md).
     2. a generator in `RandomUtils`: `return <THING>_PREFIX + RandomStringUtils.randomNumeric(10);`.
 
     - Reuse the existing generator for the entity — do not build
-      `"Test X " + System.currentTimeMillis()`.
+      `"Test X " + System.currentTimeMillis()`, and do not use `UUIDUtils` for a value
+      `RandomUtils` already generates.
     - Check the backend max length — the generated value must fit.
     - Don't reuse an existing prefix that belongs to another domain/legacy API.
     - Boundary values stay explicit (`"a"`, `RandomStringUtils.randomAlphabetic(<N>)`).
@@ -605,7 +664,7 @@ Concrete examples per row: [reference.md](reference.md).
   [reference.md](reference.md#stringresponse-id-wrapper).
 - **Batch delete with a body:** create a small request DTO and a `delete(List<id>)` step;
   register each id against `delete(List.of(id))`.
-- **Priority:** override `getPriority()` so the child is deleted before its parent (lower =
+- **Priority:** always explicit — override `getPriority()` so the child is deleted before its parent (lower =
   first). Reuse existing `CORE_<ENTITY>_PRIORITY` constants.
 - **Sites/tables created via flows already register themselves** — do not manually delete them.
 

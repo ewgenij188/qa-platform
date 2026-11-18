@@ -499,8 +499,8 @@ public record <Entity>Response(String id, String name, ..., List<<Nested>> <item
 Status-aware verify (same entity verified in several states):
 [State-dependent operation tests](#state-dependent-operation-tests).
 
-For simple response types, verify methods may carry `@Step` and a single `assertThat` — see
-[`@Step` on assertions interface methods](#step-on-assertions-interface-methods).
+For simple response types a verify may hold a single `assertThat` — see
+[Simple verify methods](#simple-verify-methods-no-step).
 
 ---
 
@@ -804,16 +804,20 @@ change, remove); adding/removing whole items is allowed in that state.
 
 Async results (Kafka consumption, cache invalidation) are polled with **Awaitility** in a
 **Flow method**, not in the test. Imports: `org.awaitility.Awaitility`, `org.awaitility.Durations`.
+Decide first whether a poll is needed at all —
+[Wait for service consumption](SKILL.md#wait-for-service-consumption).
 
 ### Wait until condition becomes true (`until`)
 
 ```java
-@Step("Core: Wait until <thing> contains {1}")
+@Step("Core: Wait until <thing> contains {expected}")
 public <Thing>Response wait<Thing>Contains(String <ownerId>, List<String> expected) {
     return Awaitility.with()
                      .pollInterval(Durations.ONE_SECOND)
                      .await()
+                     .alias("<thing> contains " + expected)
                      .pollInSameThread()
+                     .ignoreExceptions()
                      .atMost(Durations.TEN_SECONDS)
                      .until(() -> get<Thing>(<ownerId>),
                             r -> r.statusCodeIs200().body().<items>().containsAll(expected))
@@ -825,19 +829,41 @@ private RestResponse<<Thing>Response, String> get<Thing>(String <ownerId>) {
 }
 ```
 
-### Settle-window wait (`during`)
+`.ignoreExceptions()` is mandatory whenever the condition asserts (`statusCodeIs200()` throws
+on a bad status) — `REVIEW.md` rejects pollers without it. A permanent failure still ends as a
+timeout with the last error as the cause.
 
-For "must NOT appear" checks, where "not yet consumed" and "consumed and absent" look the same.
-Add a comment explaining why the settle window is needed:
+### Prove consumption, then assert absence
+
+Preferred for "must NOT appear": first wait for something that **does** change after the
+message is consumed (response message on the listener, another field, a history read by
+`gameId`), then read once and assert absence:
 
 ```java
-@Step("Core: Wait until <thing> does not contain {1}")
+String gameId = send<GameKind><Message>With<Condition>(session);
+<history>Flows.waitUntil<Details>NotEmpty(session.<msid>(), gameId);
+
+<x>Flows.get<Thing>(<ownerId>)
+        .verify<Items>DoesNotContain(<unexpected>);
+```
+
+The same pattern proves the **second send on the same entity**: the presence wait is already
+true after the first send, so wait for the second round's `gameId` before the read under test.
+
+### Settle-window wait (`during`) — only when the user picks it
+
+Weaker than proving consumption (known limitation). Use **only** when nothing can prove
+consumption **and** the user chose this option. Never on a presence wait. Comment why:
+
+```java
+@Step("Core: Wait until <thing> does not contain {unexpected}")
 public <Thing>Response wait<Thing>DoesNotContain(String <ownerId>, String unexpected) {
-    // <why an empty snapshot is ambiguous and why the settle window is required>
+    // <why an empty snapshot is ambiguous and why the settle window is accepted here>
     Awaitility.with()
               .pollInterval(Durations.ONE_SECOND)
               .await()
               .pollInSameThread()
+              .ignoreExceptions()
               .during(Durations.FIVE_SECONDS)
               .atMost(Durations.TEN_SECONDS)
               .until(() -> get<Thing>(<ownerId>),
@@ -849,8 +875,48 @@ public <Thing>Response wait<Thing>DoesNotContain(String <ownerId>, String unexpe
 Rules:
 - **Keep `until()` lambdas inline** — no `Predicate` variables, no `AtomicReference`.
 - **`pollInSameThread()`** — always (RestClient thread-safety).
-- **`until()`** for "data appears", **`during()`** for "data must NOT appear".
+- **Fixed bounds** — 1 s interval, 10 s limit; no custom durations without a reason.
 - **One wait method with a `List` parameter** instead of single/multi overloads.
+- No `Thread.sleep` / `Waiter.wait()`.
+
+---
+
+## Kafka listener pattern
+
+Listener created **before** the send, topic from the enum, condition named `condition`,
+`TEN_SECONDS` timeout, field checks after `waitUntilReceived()`:
+
+```java
+@LazyAutowired
+private KafkaListenersManager kafkaListenersManager;
+
+@Test
+@KafkaTag
+...
+void <scenario>() {
+    KafkaMessagesListener<<Message>> listener =
+            kafkaListenersManager.startListen<Format>(<Topic>.<TOPIC_CONSTANT>);
+
+    <send the message / call the API that produces it>
+
+    ConditionBuilder<<Message>> condition = new ConditionBuilder<<Message>>()
+            .fieldEquals(<Message>::<key>, <expectedKey>);
+    <Message> message = listener.options(Durations.TEN_SECONDS, <Message>.class)
+                                .conditionBuilder(condition)
+                                .waitUntilReceived();
+    message.verify<Fields>(<expected fields>);
+
+    listener.clear();
+    <next send + wait on the same listener>
+}
+```
+
+- `@KafkaTag` on the methods that touch Kafka; on the class only when all of them do.
+- `startListenAvro` vs JSON variant — as `REVIEW.md` / the neighbouring tests decide for that
+  topic.
+- Absence: `.waitUntilNotReceived()` with the same condition shape.
+- Do not check new fields via `fieldNotNull()` inside the condition — the condition only
+  identifies the message; field checks go on the assertion interface.
 
 ---
 
@@ -892,7 +958,7 @@ public RestResponse<<Thing>Response, String> get<Thing>(<Query>Params params) {
     HttpRequest request = HttpRequest.builder()
                                      .method(Method.GET)
                                      .baseUrl(haproxyUrl)
-                                     .path(BASE_PATH, V_<N>, <ENDPOINT>)
+                                     .path(BASE_PATH, <ENDPOINT>)
                                      .objectQueryParams(params)
                                      .build();
     return haproxyClient.sendRequest(request, <Thing>Response.class, String.class);
@@ -901,21 +967,19 @@ public RestResponse<<Thing>Response, String> get<Thing>(<Query>Params params) {
 
 ---
 
-## `@Step` on assertions interface methods
+## Simple verify methods (no `@Step`)
 
-Simple verifies may carry `@Step` so each check is a separate Allure step (`{0}`, `{1}` —
-parameter placeholders):
+Single-check verifies on a simple response — **no `@Step`** (TestOps already shows a step per
+interface method):
 
 ```java
 public interface <Thing>ResponseAssertions extends ObjectAssertions<<Thing>Response> {
 
-    @Step("Verify <thing> contains {0}")
     default <Thing>Response verify<Items>Contains(String item) {
         assertThat(getSelf().<items>()).as("<items>").contains(item);
         return getSelf();
     }
 
-    @Step("Verify <thing> is empty")
     default <Thing>Response verify<Items>Empty() {
         assertThat(getSelf().<items>()).as("<items>").isEmpty();
         return getSelf();
@@ -927,6 +991,7 @@ Rules:
 - Each verify returns `getSelf()` for chaining.
 - Inside assertions interfaces a static import of `assertThat` is allowed.
 - Single-assertion verifies do not need `SoftAssertions`.
+- `hasSize(n)` not `size().isEqualTo(n)`; `isZero()` not `isEqualTo(0)`.
 
 ---
 
@@ -958,25 +1023,27 @@ One private helper per message type; live-game rounds need a start message befor
 finish/cancel:
 
 ```java
-private void send<GameKind>FinishWith<Condition>(Session session) {
+private String send<GameKind>FinishWith<Condition>(Session session) {
     String gameId = RandomUtils.randomGameId();
     <statistic>Flows.sendStartMessage(session.tableId(), gameId, <KIND>_GAME_TYPE);
     <statistic>Flows.sendFinishMessage(session, gameId);
+    return gameId;
 }
 ```
 
+Return the `gameId` — a later step may need it to prove that this round was consumed.
+
 ### Versioned Steps class for non-BackOffice services
 
-`@RequiredArgsConstructor` + `private final` injection, `@Value` for config, path segments as
-constants:
+`@RequiredArgsConstructor` + `private final` injection (field named like the bean), `@Value`
+for config; the version lives in `BASE_PATH`, no separate `V_<N>` constant:
 
 ```java
 @Component
 @RequiredArgsConstructor
 public class <Service>V<N>Steps {
 
-    private static final String BASE_PATH = "/<service>";
-    private static final String V_<N> = "v<N>";
+    private static final String BASE_PATH = "/<service>/v<N>";
     private static final String <ENDPOINT> = "/<endpoint>";
 
     private final RestClient haproxyClient;
