@@ -1,33 +1,49 @@
 # qa-tests-v2 autotests — reference
 
-Concrete code snippets and message patterns referenced from `SKILL.md`.
+Code templates and message patterns referenced from `SKILL.md`.
 
-This file owns **all** examples for this skill. When a rule needs a code sample, a tag
-set, a message pattern or a naming list, it is added here under its own `##` heading and
-`SKILL.md` links to it — examples are never inlined in `SKILL.md` (see
+This file owns **all** code for this skill. When a rule needs a code sample, a tag set, a
+message pattern or a naming list, it is added here under its own `##` heading and `SKILL.md`
+links to it — code is never inlined in `SKILL.md` (see
 [Skill files](SKILL.md#skill-files--where-content-belongs)).
+
+**How to read it.** Each section gives a **template** with placeholders; concrete names come
+from the domain you are working in — find them in the repo, never copy them from here.
+Placeholders:
+
+| Placeholder | Meaning | Placeholder | Meaning |
+|---|---|---|---|
+| `<Service>` / `<service>` | service (class / package casing) | `<Entity>` / `<entity>` | main entity of the domain |
+| `<Domain>` / `<domain>` | feature package | `<Type>` | entity subtype |
+| `<Operation>` | create / update / delete / get | `<State>` / `<STATE>` | entity status (wrapper / enum constant) |
+| `<Transition>` | status transition verb (e.g. activate) | `<Nested>` | nested DTO (item of a list field) |
+| `<Payload>` | map-like payload object | `<version>` / `<N>` | API version (`v5` / `5`) |
+| `<endpoint>` | URL path of the call | `<Field>` | field name as the backend prints it |
+
+Blocks marked **Example** are verbatim data from merged code (message texts, formats) — they
+show the shape, the names in them are not to be reused for another domain.
 
 ---
 
 ## Standard tag set
 
-Common area tags are constants in `CoreTags` — package `live.winfinity.at.core.consts`
-(`api/src/main/java/live/winfinity/at/core/consts/CoreTags.java`). Feature/subtype tags may
-live in a domain-specific tag class, e.g. BackOffice branding subtype tags in
-`live.winfinity.at.core.consts.tags.backoffice.CoreBackofficeTags`. Import constants
+Common area tags are constants in `live.winfinity.at.core.consts.CoreTags`; service/entity tags
+live in `live.winfinity.at.core.consts.tags.<service>.Core<Service>Tags`. Import constants
 statically; **do not hardcode tag strings in the test**. If the feature has no tag yet, add a
 new constant to the matching tag class first:
 
 ```java
-import static live.winfinity.at.core.consts.CoreTags.BRANDING;
-import static live.winfinity.at.core.consts.CoreTags.CORE_BACKOFFICE;
-import static live.winfinity.at.core.consts.CoreTags.CORE_BACKOFFICE_V5;
-import static live.winfinity.at.core.consts.tags.backoffice.CoreBackofficeTags.DEDICATED_BRANDING;
+// Core<Service>Tags
+public static final String <TYPE>_<DOMAIN> = "<type><Domain>";
+
+// test
+import static live.winfinity.at.core.consts.CoreTags.<AREA>;
+import static live.winfinity.at.core.consts.CoreTags.<COMPONENT>;
+import static live.winfinity.at.core.consts.CoreTags.<COMPONENT>_<VERSION>;
+import static live.winfinity.at.core.consts.tags.<service>.Core<Service>Tags.<TYPE>_<DOMAIN>;
 ```
 
-Standard CORE `@Tag` set:
-
-Always formatted as a column — one `@Tag` per line:
+Env tags — always a column, one `@Tag` per line:
 
 ```java
 @Tags({
@@ -42,43 +58,27 @@ Always formatted as a column — one `@Tag` per line:
 Class-level component tags — same column format:
 
 ```java
-
 @Tags({
-        @Tag(CORE_BACKOFFICE),
-        @Tag(CORE_BACKOFFICE_V5),
-        @Tag(BRANDING),
-        @Tag(GENERIC_BRANDING)
+        @Tag(<COMPONENT>),
+        @Tag(<COMPONENT>_<VERSION>),
+        @Tag(<AREA>),
+        @Tag(<TYPE>_<DOMAIN>)
 })
 @AllureComponentCore
-@Feature("API | BackOffice | v5 | Branding campaigns")
-class CreateGenericBrandingCampaignsTests extends BaseApiTest {
-```
-
-Dedicated branding campaign class-level tags (MR 6094):
-
-```java
-@Tags({
-        @Tag(CORE_BACKOFFICE),
-        @Tag(CORE_BACKOFFICE_V5),
-        @Tag(BRANDING),
-        @Tag(DEDICATED_BRANDING)
-})
-@AllureComponentCore
-@Feature("API | BackOffice | v5 | Branding campaigns | Dedicated campaigns")
-class CreateDedicatedBrandingCampaignsTests extends BaseApiTest {
+@Feature("API | <Service> | <version> | <Feature>[ | <Type> <entity>[ | <Operation> | <State>]]")
+class <Operation><Type><Entity>sTests extends BaseApiTest {
 ```
 
 Scope: `@SmokeTag` / `@CriticalTag` / `@ExtendedTag`. Component: `@AllureComponentCore`.
 
-**No feature env tag** — do not add `@Tag(FEATURE_BACKOFFICE)` / `@Tag(FEATURE_*)`; remove it
-(and its static import) when refactoring, unless the user explicitly asks for it.
+**No feature env tag** — do not add `@Tag(FEATURE_*)`; remove it (and its static import) when
+refactoring, unless the user explicitly asks for it.
 
 ---
 
 ## Test method annotation order
 
-Normal `@Test` method order (MR 6094): env tags, JUnit test annotation, scope, Allure id,
-display name, then method.
+Env tags → `@Test` → scope → `@AllureId` → `@DisplayName` → method:
 
 ```java
 @Tags({
@@ -90,37 +90,24 @@ display name, then method.
 })
 @Test
 @CriticalTag
-@AllureId("105300")
-@DisplayName("Create Dedicated campaign without assets and check error")
-void createDedicatedCampaignWithoutAssetsAndCheckError() {
+@AllureId("<id>")
+@DisplayName("<Operation> <Type> <entity> <condition> and check error")
+void <operation><Type><Entity><Condition>AndCheckError() {
     ...
 }
 ```
 
-All methods in the `brandingcampaigns` folder — positive and `@CriticalTag` validation — run
-certification, so every method uses the same env set with `@Tag(CERTIFICATION)` as the first
-env tag:
-
-```java
-@Tags({
-        @Tag(CERTIFICATION),
-        @Tag(PREPROD),
-        @Tag(RELEASE),
-        @Tag(LATEST),
-        @Tag(CORE_QA)
-})
-```
-
-Outside `brandingcampaigns`, `@CriticalTag` validation methods drop `CERTIFICATION` and keep
-`{PREPROD, RELEASE, LATEST, CORE_QA}`.
+Env set: if the folder convention is "everything runs certification", every method (positive
+and `@CriticalTag` validation) keeps `@Tag(CERTIFICATION)` first. Otherwise `@CriticalTag`
+validation methods drop it and keep `{PREPROD, RELEASE, LATEST, CORE_QA}`.
 
 `@TestTemplate` methods carry only the template annotation and provider extension; the provider
 owns display name, Allure id, scope and environments:
 
 ```java
 @TestTemplate
-@ExtendWith(CampaignNameLengthContextProvider.class)
-void createDedicatedCampaignWithNameLength(Integer length) {
+@ExtendWith(<Field>LengthContextProvider.class)
+void <operation><Type><Entity>With<Field>Length(Integer length) {
     ...
 }
 ```
@@ -133,14 +120,14 @@ More than 2 assertions in a row — always wrap in `SoftAssertions`:
 
 ```java
 SoftAssertions.assertSoftly(softAssertions -> {
-    softAssertions.assertThat(created.name()).as("name").isEqualTo(request.name());
-    softAssertions.assertThat(created.type()).as("type").isEqualTo(...);
-    softAssertions.assertThat(created.assets()).as("assets").isEqualTo(request.assets());
+    softAssertions.assertThat(actual.<fieldA>()).as("<fieldA>").isEqualTo(<expectedA>);
+    softAssertions.assertThat(actual.<fieldB>()).as("<fieldB>").isEqualTo(<expectedB>);
+    softAssertions.assertThat(actual.<fieldC>()).as("<fieldC>").isEqualTo(<expectedC>);
 });
 ```
 
 Import `org.assertj.core.api.SoftAssertions` (not the static `assertSoftly`).
-In test classes, 1–2 assertions stay `Assertions.assertThat`; import
+In test classes and flows, 1–2 assertions stay `Assertions.assertThat`; import
 `org.assertj.core.api.Assertions` and do not static-import `assertThat`.
 
 **Hard structural preconditions come BEFORE the soft block** when the block indexes a
@@ -148,20 +135,18 @@ collection (REVIEW.md). Assert the size, read the element into a local variable,
 field checks inside `assertSoftly`:
 
 ```java
-Assertions.assertThat(brandingCampaign.tables()).as("tables").hasSize(1);
-BrandingCampaignTable actualTable = brandingCampaign.tables().getFirst();
+Assertions.assertThat(actual.<items>()).as("<items>").hasSize(1);
+<Nested> actualItem = actual.<items>().getFirst();
 SoftAssertions.assertSoftly(softAssertions -> {
-    softAssertions.assertThat(actualTable.tableId()).as("tableId").isEqualTo(table.tableId());
-    softAssertions.assertThat(actualTable.streamId()).as("streamId").isEqualTo(table.streamId());
-    // ...
+    softAssertions.assertThat(actualItem.<id>()).as("<id>").isEqualTo(expected.<id>());
+    ...
 });
 ```
 
-Without the size precondition, `getFirst()` on an empty `tables` throws
-`NoSuchElementException` instead of a readable assertion report. If no indexing is needed,
-prefer collection-style assertions inside the block (`extracting(...).containsExactly(...)`,
-`hasSize`, `first()`) — they never throw on an empty collection. One soft scope per verify
-method, never inside `forEach`.
+Without the size precondition, `getFirst()` on an empty list throws `NoSuchElementException`
+instead of a readable assertion report. If no indexing is needed, prefer collection-style
+assertions inside the block (`extracting(...).containsExactly(...)`, `hasSize`, `first()`).
+One soft scope per verify method, never inside `forEach`.
 
 ---
 
@@ -172,88 +157,74 @@ expected body goes to a **local variable first** (`error` / `expectedError`) —
 the string literal in the call chain:
 
 ```java
-String error = "\"/{path} -> '<Field>' must not be empty.\"";
-steps.create(request).statusCodeIs400().verifyErrorBody(error);
+String error = "\"/<endpoint> -> '<Field>' must not be empty.\"";
+<entity>Steps.<operation>(request).statusCodeIs400().verifyErrorBody(error);
 ```
 
-When the assertion message is built from variables, prefer `.formatted(...)` and keep the
-message in a local variable first:
+Message built from variables — `.formatted(...)`, still in a local variable:
 
 ```java
-String error = ("\"/backoffice/v5/createBrandingCampaign -> Tables with id(s) %s do not match " +
-        "the Dedicated campaign game type %s.\"")
-        .formatted(tableId, gameType.getValue());
+String error = ("\"/<endpoint> -> <message part with %s> " +
+        "<message part with %s>.\"")
+        .formatted(<argA>, <argB>);
 ```
 
-For multiline concatenation, see [Multiline formatted strings](#multiline-formatted-strings).
-
-Assert the error body when the message is deterministic (the `String error = ...` →
-`.verifyErrorBody(error)` form above). A few merged validation tests only check
-`.statusCodeIs400()` without an error body — e.g. BlueScreen `assets`/`settings` fed an
-arbitrary key — match the reviewed MR rather than forcing `verifyErrorBody` everywhere.
+Assert the error body when the message is deterministic. Some merged validation tests only
+check `.statusCodeIs400()` (e.g. a payload fed an arbitrary key) — match the neighbouring tests
+rather than forcing `verifyErrorBody` everywhere.
 
 ---
 
 ## Multiline formatted strings
 
-Java applies `.formatted(...)` to the expression immediately before it. With string
-concatenation, wrap the whole string expression in parentheses; otherwise the first `%s` may
-remain literal and arguments shift into the wrong placeholder.
+Java applies `.formatted(...)` to the expression immediately before it. With concatenation,
+wrap the whole string expression in parentheses; otherwise the first `%s` stays literal and
+arguments shift.
 
 Correct:
 
 ```java
-String error = ("\"/backoffice/v5/createBrandingCampaign -> Tables with id(s) %s do not match " +
-        "the Dedicated campaign game type %s.\"")
-        .formatted(siteTable.tableId(), game.gameType().getValue());
-```
-
-Correct with two dynamic key lists:
-
-```java
-String error = ("\"/backoffice/v5/createBrandingCampaign -> Dedicated campaign assets must " +
-        "contain exactly: %s. Dedicated campaign settings must contain exactly: %s.\"")
-        .formatted(expectedDedicatedBrandingAssets, expectedDedicatedBrandingSettings);
+String error = ("\"/<endpoint> -> <text with %s> " +
+        "<text with %s>.\"")
+        .formatted(<argA>, <argB>);
 ```
 
 Wrong:
 
 ```java
-String error = "\"... Tables with id(s) %s do not match the Dedicated " +
-        "campaign game type %s.\"".formatted(siteTable.tableId(), game.gameType().getValue());
+String error = "\"/<endpoint> -> <text with %s> " +
+        "<text with %s>.\"".formatted(<argA>, <argB>);
 ```
 
 ---
 
 ## FluentValidation error-body patterns
 
-Always confirm on first real run; these are the default guesses seen across the repo:
+Always confirm on the first real run; default guesses seen across the repo:
 
 - NotEmpty → `'<Field>' must not be empty.`
-- NotNull / forbidden value → `'<Field>' must be empty.` (when the rule is `.Null()` /
-  `.Empty()` on a non-empty value).
+- Null / Empty rule on a non-empty value → `'<Field>' must be empty.` /
+  `<Type> <entity> '<Field>' must be null.`
 - MaxLength → `The length of '<Field>' must be <N> characters or fewer. You entered <M> characters.`
-- The full message is prefixed with the endpoint path, e.g.
-  `"/backoffice/v5/<endpoint> -> ..."`.
+- Length range → `'<Field>' must be between <min> and <max> characters. You entered <M> characters.`
+- Duplicates → `'{<Field>}' contains duplicate values` (no trailing dot)
+- Required nested id → `The <Field> field is required.`
+- The full message is prefixed with the endpoint path: `"/<service>/<version>/<endpoint> -> ..."`,
+  and the response body keeps the surrounding quotes (`"\"...\""`).
 
 ---
 
 ## DisplayName (naming)
 
-Merged `brandingcampaigns` tests (and the whole master package) use **plain natural-language
-names** — `Create <Type> campaign with <violation> -> 400` — with **no** `[BVA]`/`[DT]`/`[EP]`
-bracket prefixes:
+Plain natural-language names, **no** `[BVA]`/`[DT]`/`[EP]` prefixes:
 
-- `Create Physical campaign with siteIds -> 400`
-- `Create BlueScreen campaign with streamId 101 chars -> 400`
-- `Create Generic campaign with name 201 chars -> 400`
-- `Create Physical campaign without tables -> 400` (sends one table with a null `tableId`)
+- `<Operation> <Type> <entity> with <field> -> 400`
+- `<Operation> <Type> <entity> with <field> <N> chars -> 400`
+- `<Operation> <Type> <entity> without <items> -> 400`
+- `<Operation> <State> <Type> <entity>: <scenario>[ and check error]` (state-dependent classes)
 
-The name states the field under test and the expected status; the exact offending value
-goes in the method name:
-
-- `...WithStreamId101CharsReturns400`
-- `...WithEmptyNameReturns400`
+The name states the field under test and the expected result; the exact offending value goes
+in the method name.
 
 ---
 
@@ -261,85 +232,74 @@ goes in the method name:
 
 Describe the exact offending value in the method name:
 
-- `...Name201CharsReturns400`
-- `...WithEmptyNameReturns400`
+- `...<Field><N>CharsReturns400`
+- `...WithEmpty<Field>Returns400`
 
 ---
 
 ## Parameterized positive cases (@TestTemplate)
 
-Merge BVA pairs (1 char / 40 chars) into one `@TestTemplate`. The test method takes a **plain
-value** (`Integer length`) — no testcase record (review feedback); the provider passes the raw
-value via `.value(length)`:
+Merge BVA pairs into one `@TestTemplate`. The test method takes a **plain value** — no testcase
+record; the provider passes the raw value via `.value(...)`:
 
 ```java
 // test
 @TestTemplate
-@ExtendWith(BrandedTableNameLengthContextProvider.class)
-void createGenericCampaignWithBrandedTableName(Integer length) {
-    createAndVerifyGenericCampaignWithBrandedTableName(RandomStringUtils.randomAlphabetic(length));
+@ExtendWith(<Field>LengthContextProvider.class)
+void <operation><Type><Entity>With<Field>(Integer length) {
+    createAndVerify<Type><Entity>With<Field>(RandomStringUtils.randomAlphabetic(length));
 }
 ```
 
 ```java
-// provider — under api/src/test/java/.../core/providers/backoffice/<domain>/
-public class BrandedTableNameLengthContextProvider implements BaseTestTemplateInvocationProvider {
+// provider — api/src/test/java/.../core/providers/<service>/<domain>/
+public class <Field>LengthContextProvider implements BaseTestTemplateInvocationProvider {
 
-    private static final String TEMPLATE = "Create Generic campaign with brandedTableName %s";
+    private static final String TEMPLATE = "<Operation> <Type> <entity> with <field> %s";
 
     @Override
     public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
         return Stream.of(
-                create(1, "1 char", "104972", context),
-                create(40, "40 chars", "104973", context)
+                create(<min>, "<min> char", "<allureIdMin>", context),
+                create(<max>, "<max> chars", "<allureIdMax>", context)
         );
     }
 
-    private TestTemplateInvocationContext create(int length, String testCaseName, String allureId,
+    private TestTemplateInvocationContext create(Integer length, String testCaseName, String allureId,
                                                  ExtensionContext context) {
         return buildTestContext(context)
                 .displayName(TEMPLATE, testCaseName)
                 .allureId(allureId)
                 .value(length)
-                .scopes(criticalTag())
+                .scopes(<smokeTag()|criticalTag()>)
                 .environments(List.of(CERTIFICATION, PREPROD, RELEASE, LATEST, CORE_QA))
                 .build();
     }
 }
 ```
 
-Do NOT put `@Tag`/`@AllureId`/`@DisplayName`/scope annotations on the `@TestTemplate` method —
-they live in the provider.
-
-Scope is per provider, not forced to critical — the BlueScreen streamId-length positives
-(1 / 100 chars) use `.scopes(smokeTag())` and keep `CERTIFICATION`; each case has its own
-`@AllureId`. The provider lives under
-`api/src/test/java/.../core/providers/backoffice/brandingcampaigns/`
-(`BlueScreenStreamIdLengthContextProvider`, `TEMPLATE = "Create BlueScreen campaign with
-streamId %s"`).
+Do NOT put `@Tag`/`@AllureId`/`@DisplayName`/scope on the `@TestTemplate` method. Scope is per
+provider (positives may be `smokeTag()`); each case has its own Allure id.
 
 ---
 
 ## Bean-name collision check
 
-Spring names beans from the simple class name, so a new `@Component` Steps/Flows class must
-not reuse an existing class name anywhere in the repo. This fails at context load:
+Spring names beans from the simple class name, so a new `@Component` must not reuse an existing
+class name anywhere in the repo. This fails at context load:
 
 ```
-ConflictingBeanDefinitionException: Annotation-specified bean name 'brandingCampaignsSteps'
-for bean class [...core...BrandingCampaignsSteps] conflicts with existing, non-compatible
-bean definition ... [...backoffice.tables.steps.BrandingCampaignsSteps]
+ConflictingBeanDefinitionException: Annotation-specified bean name '<entity>sSteps'
+for bean class [...core...<Entity>sSteps] conflicts with existing, non-compatible
+bean definition ... [...<other package>.<Entity>sSteps]
 ```
 
-Check first: `find api/src -name "<ClassName>.java"`. On collision, disambiguate with a
-version suffix — `BrandingCampaignsSteps` → `BrandingCampaignsV5Steps`. POJO records/enums
-are not beans and may share simple names across packages.
+Check first: `find api/src -name "<ClassName>.java"`. On collision, add a version suffix:
+`<Entity>sSteps` → `<Entity>sV<N>Steps`. POJO records/enums are not beans.
 
 ---
 
 ## REST client overloads
-
-Choose the `RestClient` send method by response shape (from `api/src/main/AGENTS.md`):
 
 | Response shape | Method                                               |
 |----------------|------------------------------------------------------|
@@ -359,20 +319,18 @@ Create endpoints returning a raw quoted id use the String-wrapper pattern below.
 ## StringResponse id wrapper
 
 A `RestResponse<String, ...>` body is the **raw HTTP string including quotes** (`"abc123"`).
-Do NOT use `.replace("\"", "")` and do NOT parse with `ObjectMapper`. The repo pattern is a
-`StringResponse` subclass stripped via `StringUtils.substringBetween(data(), "\"")`, consumed
-through `sendRequestAndWrapString(...)` — mirror `PartnerIdResponseWrapper` /
-`FolderIdResponseWrapper`:
+Do NOT use `.replace("\"", "")` and do NOT parse with `ObjectMapper`. Mirror an existing
+`*IdResponseWrapper` under `core/dto/`:
 
 ```java
-// wrapper — under core/dto/backoffice (not the pojo package)
-public class BrandingCampaignIdResponseWrapper extends StringResponse {
+// core/dto/<service>/<Entity>IdResponseWrapper.java
+public class <Entity>IdResponseWrapper extends StringResponse {
 
-    public BrandingCampaignIdResponseWrapper(String data) {
+    public <Entity>IdResponseWrapper(String data) {
         super(data);
     }
 
-    public String campaignId() {
+    public String <entity>Id() {
         return StringUtils.substringBetween(data(), "\"");
     }
 }
@@ -380,31 +338,30 @@ public class BrandingCampaignIdResponseWrapper extends StringResponse {
 
 ```java
 // Steps
-public RestResponse<BrandingCampaignIdResponseWrapper, String> create(CreateBrandingCampaignRequest request) {
+@Step("Core V<N>: Create <entity>")
+public RestResponse<<Entity>IdResponseWrapper, String> create(Create<Entity>Request request) {
     ...
-    RestResponse<BrandingCampaignIdResponseWrapper, String> response =
-            haproxyClient.sendRequestAndWrapString(httpRequest, BrandingCampaignIdResponseWrapper.class, String.class);
+    RestResponse<<Entity>IdResponseWrapper, String> response =
+            haproxyClient.sendRequestAndWrapString(httpRequest, <Entity>IdResponseWrapper.class, String.class);
     if (response.code() == HttpStatus.CREATED) {
-        keepCreatedCampaign(response.body().campaignId());
+        keepCreated<Entity>(response.body().<entity>Id());
     }
     return response;
 }
 ```
 
 ```java
-// Flow — create+get orchestration shared by tests; unwrap the id
-@Step("Core: Create generic branding campaign and get it")
-public BrandingCampaignResponse createAndGetGenericCampaign(String name, List<String> siteIds,
-                                                            List<BrandingCampaignTable> tables,
-                                                            GenericAssets assets) {
-    CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.generic(name, siteIds, tables, assets);
-    return createAndGetCampaign(request);
+// Flow — create+get orchestration shared by tests
+@Step("Core: Create <Type> <entity> and get it")
+public <Entity>Response createAndGet<Type><Entity>(<inputs>) {
+    Create<Entity>Request request = Create<Entity>Request.<type>(<inputs>);
+    return createAndGet<Entity>(request);
 }
 
-private BrandingCampaignResponse createAndGetCampaign(CreateBrandingCampaignRequest request) {
-    String campaignId = brandingCampaignsV5Steps.create(request).statusCodeIs201().body().campaignId();
-    assertThat(campaignId).as("campaignId").isNotNull();
-    return brandingCampaignsV5Steps.getCampaign(campaignId).statusCodeIs200().body();
+private <Entity>Response createAndGet<Entity>(Create<Entity>Request request) {
+    String id = <entity>Steps.create(request).statusCodeIs201().body().<entity>Id();
+    Assertions.assertThat(id).as("<entity>Id").isNotNull();
+    return <entity>Steps.get<Entity>(id).statusCodeIs200().body();
 }
 ```
 
@@ -412,13 +369,13 @@ private BrandingCampaignResponse createAndGetCampaign(CreateBrandingCampaignRequ
 
 ## keepCreatedX cleanup helper (Steps)
 
-Mirror `BackofficeSiteSteps.keepCreatedSite`: `create` registers the id for cleanup via a
-`keepCreatedX` helper. **Assert the delete status inside the cleanup lambda** — otherwise a
-failed delete is silently treated as success and the entity leaks on the env:
+`create` registers the id for cleanup via a `keepCreated<Entity>` helper. **Assert the delete
+status inside the cleanup lambda** — otherwise a failed delete is silently treated as success
+and the entity leaks on the env:
 
 ```java
-private void keepCreatedCampaign(String campaignId) {
-    register(campaignId, id -> hardDelete(List.of(id)).statusCodeIs204());
+private void keepCreated<Entity>(String id) {
+    register(id, entityId -> hardDelete(List.of(entityId)).statusCodeIs204());
 }
 ```
 
@@ -426,116 +383,71 @@ private void keepCreatedCampaign(String campaignId) {
 
 ## Valid-request factory for negative tests
 
-When negative tests each rebuild the same valid request, add a builder factory on the request
-POJO; each test overrides only the field it targets:
+Two complementary factory shapes on the request POJO:
 
 ```java
-// request POJO in .../brandingcampaigns/create/
-public static CreateBrandingCampaignRequestBuilder validGenericBuilder(String tableId, List<String> siteIds) {
-    return CreateBrandingCampaignRequest.builder()
-                                        .name(RandomUtils.randomBrandingCampaignName())
-                                        .type(BrandingCampaignType.GENERIC)
-                                        .siteIds(siteIds)
-                                        .tables(List.of(BrandingCampaignTable.of(tableId)))
-                                        .assets(GenericAssets.random().toMap());
+// full factory — returns the built request (positive tests, flows)
+public static Create<Entity>Request <type>(String name, <type-specific inputs>) {
+    return Create<Entity>Request.builder()
+                                .name(name)
+                                .type(<Entity>Type.<TYPE>)
+                                .<field>(<input>)
+                                .build();
+}
+
+// builder factory — valid defaults, the test overrides exactly one field
+public static Create<Entity>RequestBuilder valid<Type>Builder(<minimal ids>) {
+    return Create<Entity>Request.builder()
+                                .name(RandomUtils.random<Entity>Name())
+                                .type(<Entity>Type.<TYPE>)
+                                .<field>(<valid default>);
 }
 ```
-
-**Full factory returning the built request** — when the request is used as-is (no per-test
-override), the static factory returns the finished `CreateBrandingCampaignRequest` with
-`.build()`:
-
-```java
-// request POJO in .../brandingcampaigns/create/
-public static CreateBrandingCampaignRequest generic(String name, List<String> siteIds,
-                                                    List<BrandingCampaignTable> tables,
-                                                    GenericAssets assets) {
-    return CreateBrandingCampaignRequest.builder()
-                                        .name(name)
-                                        .type(BrandingCampaignType.GENERIC)
-                                        .siteIds(siteIds)
-                                        .tables(tables)
-                                        .assets(assets.toMap())
-                                        .build();
-}
-```
-
-The two shapes complement each other: `xxx(...)` returns the built record; `validXxxBuilder(...)`
-returns the `*Builder` so a positive/negative test can override just the field it targets and
-then call `.build()`.
 
 ```java
 // negative test — override only the field under test
-CreateBrandingCampaignRequest request =
-        CreateBrandingCampaignRequest.validGenericBuilder(tableId, List.of(siteId))
-                                     .name(RandomStringUtils.randomAlphabetic(201))
-                                     .build();
+Create<Entity>Request request = Create<Entity>Request.valid<Type>Builder(<ids>)
+                                                     .<field>(<invalid value>)
+                                                     .build();
 ```
 
-**Type-specific builders bake the type contract** — a Physical builder takes only a
-`tableId` (no `siteIds` param at all; the field simply is not set), a BlueScreen builder
-always takes a `streamId` (merged Physical MR):
+**Type-specific builders bake the type contract** — a type without some field simply never
+sets it; a type that requires a nested attribute always sets a valid one.
+
+**"Requires an item" — ONE item with a null id**, not an empty list:
 
 ```java
-// request POJO in .../brandingcampaigns/create/
-public static CreateBrandingCampaignRequest physical(String name, BrandingCampaignTable table) {
-    return CreateBrandingCampaignRequest.builder()
-                                        .name(name)
-                                        .type(BrandingCampaignType.PHYSICAL)
-                                        .tables(List.of(table))
-                                        .build();
-}
-
-public static CreateBrandingCampaignRequestBuilder validPhysicalBuilder(String tableId) {
-    return CreateBrandingCampaignRequest.builder()
-                                        .name(RandomUtils.randomBrandingCampaignName())
-                                        .type(BrandingCampaignType.PHYSICAL)
-                                        .tables(List.of(BrandingCampaignTable.of(tableId)));
-}
+Create<Entity>Request request = Create<Entity>Request.valid<Type>Builder(null).build();
+String error = "\"/<endpoint> -> The <Field> field is required.\"";
+<entity>Steps.create(request).statusCodeIs400().verifyErrorBody(error);
 ```
 
-**"Campaign requires a table" — ONE table with a null `tableId`**, not an empty list; the
-API answers `"The TableId field is required."` (merged BlueScreen & Physical tests):
+**Count rule — two DISTINCT valid items**, each fully valid, so only the count rule fires:
 
 ```java
-CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.validPhysicalBuilder(null).build();
-String error = "\"/backoffice/v5/createBrandingCampaign -> The TableId field is required.\"";
-brandingCampaignsV5Steps.create(request).statusCodeIs400().verifyErrorBody(error);
+String firstId = <create first valid item>;
+String secondId = <create second valid item>;
+Create<Entity>Request request = Create<Entity>Request.valid<Type>Builder(firstId)
+                                                     .<items>(List.of(<Nested>.of(firstId),
+                                                                      <Nested>.of(secondId)))
+                                                     .build();
 ```
 
-**Count rule (two tables) — two DISTINCT active tables**, each with a valid streamId, so
-only the count rule can fire; reusing one static id trips the duplicate-value rule instead:
-
-```java
-String firstTableId = coreTableFlows.createActivatedTable(gameType, siteId).getId();
-String secondTableId = coreTableFlows.createActivatedTable(gameType, siteId).getId();
-CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.validPhysicalBuilder(firstTableId)
-                                                                     .tables(List.of(
-                                                                             BrandingCampaignTable.of(firstTableId),
-                                                                             BrandingCampaignTable.of(secondTableId)))
-                                                                     .build();
-```
-
-Do not reuse the same static tableId (`getStaticTableIdByGameType(...)`) for two elements
-and do not leave a nested required field (e.g. `streamId`) null when the target rule is the
-count — the duplicate-value / NotEmpty rules then fire instead, and the expected error
-starts depending on validation order.
+Do not reuse one static id for two elements and do not leave a nested required field null —
+the duplicate-value / NotEmpty rules then fire instead.
 
 ---
 
 ## Enum constants
 
-Enum constants are CAPS; if the backend serializes by value, add `value` + `@JsonValue`
-(mirror `core.enums.topwins.OrderBy`):
+CAPS constants; if the backend serializes by value, add `value` + `@JsonValue`:
 
 ```java
-
 @Getter
 @AllArgsConstructor
-public enum BrandingCampaignStatus {
-    DRAFT("Draft"),
-    ACTIVE("Active"),
-    ABORTED("Aborted");
+public enum <Entity>Status {
+    <STATE_A>("<StateA>"),
+    <STATE_B>("<StateB>");
 
     @JsonValue
     private final String value;
@@ -546,131 +458,102 @@ public enum BrandingCampaignStatus {
 
 ## Response assertions interface
 
-Verification for a response lives in a `*Assertions` interface (mirror
-`createtable/assertions/CreateTableAssertions`): the interface `extends ObjectAssertions<T>`,
-the response record `implements` it and returns `this` from `getSelf()`, and each verify is a
-`default` method calling `getSelf()`. Tests call the verify on the response instance.
+Verification lives in an `<Entity>Assertions` interface next to the response: it
+`extends ObjectAssertions<T>`, the response record `implements` it and returns `this` from
+`getSelf()`, each verify is a `default` method on `getSelf()`. Tests call the verify on the
+response instance; flows stay thin and never verify.
 
 ```java
-// .../brandingcampaigns/get/assertions/BrandingCampaignAssertions.java
-public interface BrandingCampaignAssertions extends ObjectAssertions<BrandingCampaignResponse> {
+// .../get/assertions/<Entity>Assertions.java
+public interface <Entity>Assertions extends ObjectAssertions<<Entity>Response> {
 
-    default BrandingCampaignResponse verifyGenericCampaign(String name, List<String> siteIds,
-                                                           List<BrandingCampaignTable> tables,
-                                                           GenericAssets assets) {
-        BrandingCampaignResponse brandingCampaign = getSelf();
-        ...
+    default <Entity>Response verify<Type><Entity>(<expected fields>) {
+        <Entity>Response actual = getSelf();
         SoftAssertions.assertSoftly(softAssertions -> {
-            softAssertions.assertThat(brandingCampaign.type()).as("type")
-                          .isEqualTo(BrandingCampaignType.GENERIC);
+            softAssertions.assertThat(actual.type()).as("type").isEqualTo(<Entity>Type.<TYPE>);
             ...
         });
-        return brandingCampaign;
+        return actual;
     }
 }
 ```
 
 ```java
-// response record in .../brandingcampaigns/get/
-public record BrandingCampaignResponse(...) implements BrandingCampaignAssertions {
+// .../get/<Entity>Response.java — reuses nested DTOs from create.nested
+public record <Entity>Response(String id, String name, ..., List<<Nested>> <items>)
+        implements <Entity>Assertions {
 
     @Override
-    public BrandingCampaignResponse getSelf() {
+    public <Entity>Response getSelf() {
         return this;
     }
 }
 ```
 
-The GET response **reuses the nested DTOs from `create/nested/`** — it imports
-`BrandingCampaignTable`, `SiteInfo` and `PartnerInfo` from `create.nested` instead of
-declaring its own copies:
-
-```java
-// .../brandingcampaigns/get/BrandingCampaignResponse.java
-
-import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.BrandingCampaignTable;
-import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.PartnerInfo;
-import live.winfinity.at.core.gateway.pojo.backoffice.brandingcampaigns.create.nested.SiteInfo;
-
-public record BrandingCampaignResponse(String id, String name,
-                                       List<SiteInfo> sitesInfo, List<PartnerInfo> partnersInfo,
-                                       List<BrandingCampaignTable> tables, ...) implements BrandingCampaignAssertions {
-    ...
-}
-```
-
 ```java
 // test — fluent call on the response
-brandingCampaign.verifyGenericCampaign(brandingCampaignName, siteIds, tables, assets);
+<entity>Flows.createAndGet<Type><Entity>(<inputs>)
+             .verify<Type><Entity>(<expected fields>);
 ```
 
-When the same entity is verified in several states, make the verify status-aware — see
+Status-aware verify (same entity verified in several states):
 [State-dependent operation tests](#state-dependent-operation-tests).
 
-The verify methods are NOT placed on the flow — flows stay thin (create + orchestration only).
-
-For simpler response types (e.g. list-of-ids), each verify method can carry `@Step("Verify ...")`
-for Allure reporting and use a single `assertThat` instead of `SoftAssertions` — see
+For simple response types, verify methods may carry `@Step` and a single `assertThat` — see
 [`@Step` on assertions interface methods](#step-on-assertions-interface-methods).
 
-## Verify full shape (brandingcampaigns)
+---
 
-Each `verifyXxxCampaign` asserts the whole GET response in one soft block; the structural
-precondition (`tables` size → `getFirst()`) is asserted **before** the block. Cross-cutting
-(added by the Physical MR): on GET the campaign returns empty `partnersInfo` and `settings`
-for every type, and empty `assets` where the type sends none.
+## Verify full shape
+
+Each `verify<Type><Entity>` asserts the **whole** GET response in one soft block — every field
+of the response, including the ones that must be empty/null for this type. The structural
+precondition (list size → `getFirst()`) is asserted **before** the block.
 
 ```java
-default BrandingCampaignResponse verifyPhysicalCampaign(String name, BrandingCampaignTable table) {
-    BrandingCampaignResponse brandingCampaign = getSelf();
-    assertThat(brandingCampaign.tables()).as("tables").hasSize(1);
-    BrandingCampaignTable actualTable = brandingCampaign.tables().getFirst();
+default <Entity>Response verify<Type><Entity>(String name, <Nested> expectedItem) {
+    <Entity>Response actual = getSelf();
+    Assertions.assertThat(actual.<items>()).as("<items>").hasSize(1);
+    <Nested> actualItem = actual.<items>().getFirst();
     SoftAssertions.assertSoftly(softAssertions -> {
-        softAssertions.assertThat(brandingCampaign.name()).as("name").isEqualTo(name);
-        softAssertions.assertThat(brandingCampaign.type()).as("type")
-                      .isEqualTo(BrandingCampaignType.PHYSICAL);
-        softAssertions.assertThat(brandingCampaign.status()).as("status")
-                      .isEqualTo(BrandingCampaignStatus.DRAFT);
-        softAssertions.assertThat(brandingCampaign.sitesInfo()).as("sitesInfo").isEmpty();
-        softAssertions.assertThat(brandingCampaign.partnersInfo()).as("partnersInfo").isEmpty();
-        softAssertions.assertThat(actualTable.tableId()).as("tableId").isEqualTo(table.tableId());
-        softAssertions.assertThat(actualTable.brandedTableName()).as("brandedTableName")
-                      .isEqualTo(table.brandedTableName());
-        softAssertions.assertThat(brandingCampaign.assets()).as("assets").isEmpty();
-        softAssertions.assertThat(brandingCampaign.settings()).as("settings").isEmpty();
+        softAssertions.assertThat(actual.name()).as("name").isEqualTo(name);
+        softAssertions.assertThat(actual.type()).as("type").isEqualTo(<Entity>Type.<TYPE>);
+        softAssertions.assertThat(actual.status()).as("status").isEqualTo(<Entity>Status.<STATE>);
+        softAssertions.assertThat(actual.<unusedForType>()).as("<unusedForType>").isEmpty();
+        softAssertions.assertThat(actualItem.<id>()).as("<id>").isEqualTo(expectedItem.<id>());
+        ...
     });
-    return brandingCampaign;
+    return actual;
 }
 ```
 
-Per-type shape (merged MRs):
+Multi-item lists — compare as tuples, no indexing:
 
-- BlueScreen verify (`(name, siteIds, table[, status])`) — name, type, status, `gameType`
-  null, `assets` empty, `settings` empty, `sitesInfo` ids
-  (`extracting(SiteInfo::id).containsExactlyInAnyOrderElementsOf(siteIds)`), `partnersInfo`
-  empty, tableId, streamId, brandedTableName.
-- `verifyPhysicalCampaign(name, table)` — name, type, status DRAFT, `sitesInfo` empty,
-  `partnersInfo` empty, tableId, brandedTableName, `assets` empty, `settings` empty
-  (no `gameType` assertion).
+```java
+softAssertions.assertThat(actual.<items>()).as("<items>")
+              .extracting(<Nested>::<id>, <Nested>::<attr>)
+              .containsExactlyInAnyOrderElementsOf(expected.stream()
+                                                           .map(i -> tuple(i.<id>(), i.<attr>()))
+                                                           .toList());
+```
+
+Id lists of nested info objects — `extracting(<Info>::id).containsExactlyInAnyOrderElementsOf(ids)`.
 
 ---
 
 ## Fixed key list on a POJO
 
-Fixed key sets (e.g. generic campaign assets) live as a `List` on the POJO and values are
-generated from them. The keys themselves are declared as an **enum** (see
-[Enum constants](#enum-constants)) under `core/enums/<domain>/`, and the POJO's key list is
-built from `.getValue()` — never inline string literals:
+Fixed key sets are an **enum** under `core/enums/<domain>/`; the POJO builds its key list from
+`.getValue()` and generates values from it — never inline string literals:
 
 ```java
-// core/enums/brandingcampaigns/GenericAssetsKeys.java
+// core/enums/<domain>/<Payload>Keys.java
 @Getter
 @AllArgsConstructor
-public enum GenericAssetsKeys {
+public enum <Payload>Keys {
 
-    LOADING("Loading"),
-    DESKTOP("Desktop"),
-    MOBILE("Mobile");
+    <KEY_A>("<KeyA>"),
+    <KEY_B>("<KeyB>");
 
     @JsonValue
     private final String value;
@@ -678,412 +561,139 @@ public enum GenericAssetsKeys {
 ```
 
 ```java
-// core/gateway/pojo/backoffice/brandingcampaigns/create/nested/GenericAssets.java
-public record GenericAssets(Map<String, String> assets) {
+// .../create/nested/<Payload>.java
+public record <Payload>(Map<String, String> values) {
 
-    public static final List<String> GENERIC_ASSET_KEYS = List.of(GenericAssetsKeys.LOADING.getValue(),
-                                                                  GenericAssetsKeys.DESKTOP.getValue(),
-                                                                  GenericAssetsKeys.MOBILE.getValue());
+    public static final List<String> <PAYLOAD>_KEYS = List.of(<Payload>Keys.<KEY_A>.getValue(),
+                                                              <Payload>Keys.<KEY_B>.getValue());
 
-    public static GenericAssets random() {
-        Map<String, String> randomAssets = GENERIC_ASSET_KEYS.stream()
-                                                             .collect(Collectors.toMap(
-                                                                     key -> key,
-                                                                     key -> RandomUtils.randomWinfinityUrl()));
-        return new GenericAssets(randomAssets);
+    public static <Payload> random() {
+        Map<String, String> map = <PAYLOAD>_KEYS.stream()
+                                               .collect(Collectors.toMap(key -> key,
+                                                                         key -> RandomUtils.random<Value>()));
+        return new <Payload>(map);
     }
 
     public Map<String, String> toMap() {
-        return assets;
+        return values;
     }
 }
 ```
 
-Same pattern applies to a builder-factory default that consumes the key set
-(`GenericAssets.GENERIC_ASSET_KEYS` used when building a validation payload missing one key).
+The key list is reused when a validation payload must miss one key.
 
 ---
 
-## Dedicated Branding campaigns
+## API-driven payload configuration
 
-MR 6094 (`CreateDedicatedBrandingCampaignsTests`) is the reviewed pattern for Dedicated
-Branding campaign autotests.
+When the valid keys of a request payload come from **another API response** (configuration per
+game/type), do not hardcode them.
 
-### Class shape and dependencies
+### Lookup with a useful error
 
 ```java
-class CreateDedicatedBrandingCampaignsTests extends BaseApiTest {
-
-    private static final GameType GAME_TYPE = GameType.TEEN_PATTI;
-
-    @LazyAutowired
-    private BrandingCampaignsV5Steps brandingCampaignsSteps;
-    @LazyAutowired
-    private BrandingCampaignsFlows brandingCampaignsFlows;
-    @LazyAutowired
-    private BackOfficeApiGatewayFlows backOfficeApiGatewayFlows;
-    @LazyAutowired
-    private CoreSiteTableRelationFlows coreSiteTableRelationFlows;
-    @LazyAutowired
-    private PartnersProperties partnersProperties;
-    @LazyAutowired
-    private BackofficeSteps backofficeSteps;
-
-    @Value("${backoffice.test-folder-id}")
-    String testFolderId;
+@Step("Core: Get <config> by <key>")
+public <Config> get<Config>(<Key> key) {
+    String error = "There is no %s <config>.".formatted(key.getValue());
+    return <x>Steps.get<Configs>(<version>).statusCodeIs200().body().data().stream()
+                   .filter(c -> c.<key>() == key)
+                   .findFirst()
+                   .orElseThrow(() -> new QaWinfinityException(error));
 }
 ```
 
-Rules from review:
-
-- Put `GAME_TYPE` as the first field in the class body.
-- Use `@LazyAutowired`, not `@Autowired`.
-- Keep `testFolderId` as the configured BackOffice folder id.
-- Comments, if unavoidable, are in English and explain why, not test steps.
-
-### Dedicated prerequisite site/table
-
-Dedicated TEEN_PATTI campaigns need an active table created with an explicit lobby category.
-Use the existing flow directly; do not wrap this one-liner in a private test helper:
+### Payload built from the live configuration
 
 ```java
-SiteTableRelation siteTable = coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId, GAME_TYPE,
-                                                                                   Category.BANKER_GAMES);
-```
+// .../create/nested/<Payload>.java
+public record <Payload>(Map<String, String> values) {
 
-If the line is too long because the local variable name is long, split arguments and align the
-continuation with the surrounding file:
-
-```java
-SiteTableRelation seccondSiteTable = coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId,
-                                                                                          GAME_TYPE,
-                                                                                          Category.BANKER_GAMES);
-```
-
-For a different game type negative case, create a matching table for the different type so the
-test reaches the API rule under test:
-
-```java
-GameType differentGameType = RandomUtils.getRandomValueFromListExcluding(GameType.getLiveCasinoGameTypes(),
-                                                                         GAME_TYPE);
-SiteTableRelation siteTable = coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId,
-                                                                                   differentGameType);
-```
-
-### Game lookup and API-driven Dedicated keys
-
-Dedicated `assets` and `settings` keys come from `GET /backoffice/v5/games`. The `Game` DTO
-contains:
-
-```java
-public record Game(GameType gameType, String name, Integer gameTypeNumber, List<String> betNames,
-                   List<DedicatedBrandingAsset> dedicatedBrandingAssets,
-                   List<DedicatedBrandingSetting> dedicatedBrandingSettings) {
-}
-```
-
-Lookup a configured game via `BackOfficeApiGatewayFlows`; missing lookup data must throw a
-useful `QaWinfinityException`, not a bare `NoSuchElementException`:
-
-```java
-@Step("Core: Get game by game type")
-public Game getGame(GameType gameType) {
-    String error = "There is no %s game.".formatted(gameType.getValue());
-    return backofficeSteps.getGames("v5").statusCodeIs200().body().data().stream()
-                          .filter(game -> game.gameType() == gameType)
-                          .findFirst()
-                          .orElseThrow(() -> new QaWinfinityException(error));
-}
-```
-
-Build valid payload maps from the live game configuration using small records under
-`create/nested/`:
-
-```java
-public record DedicatedBrandingAssets(Map<String, String> assets) {
-
-    public static DedicatedBrandingAssets of(Game game) {
-        Map<String, String> map = game.dedicatedBrandingAssets()
-                                  .stream()
-                                  .collect(Collectors.toMap(DedicatedBrandingAsset::key,
-                                                            asset -> RandomUtils.randomWinfinityUrl() + asset.key()));
-        return new DedicatedBrandingAssets(map);
+    public static <Payload> of(<Config> config) {
+        Map<String, String> map = config.<configItems>()
+                                        .stream()
+                                        .collect(Collectors.toMap(<ConfigItem>::key,
+                                                                  item -> RandomUtils.random<Value>()));
+        return new <Payload>(map);
     }
 
     public Map<String, String> toMap() {
-        return assets;
+        return values;
     }
 }
 ```
 
-`DedicatedBrandingSettings.of(game)` mirrors this pattern using
-`DedicatedBrandingSetting::key`. Tests call `DedicatedBrandingAssets.of(game).toMap()` and
-`DedicatedBrandingSettings.of(game).toMap()` instead of hardcoding the configured keys.
-
-### Request factories
-
-Dedicated request factories live on `CreateBrandingCampaignRequest` together with other
-branding campaign types:
+Tests call `<Payload>.of(config).toMap()`. The expected error text for "payload must contain
+exactly ..." is built from the same live data:
 
 ```java
-public static CreateBrandingCampaignRequest dedicated(String name, List<String> siteIds, GameType gameType,
-                                                       List<BrandingCampaignTable> tables,
-                                                       Map<String, String> assets,
-                                                       Map<String, String> settings) {
-    return CreateBrandingCampaignRequest.builder()
-                                        .name(name)
-                                        .type(BrandingCampaignType.DEDICATED)
-                                        .siteIds(siteIds)
-                                        .gameType(gameType)
-                                        .tables(tables)
-                                        .assets(assets)
-                                        .settings(settings)
-                                        .build();
-}
-
-public static CreateBrandingCampaignRequestBuilder dedicatedBuilder(String tableId, List<String> siteIds,
-                                                                     Game game) {
-    return CreateBrandingCampaignRequest.builder()
-                                        .name(RandomUtils.randomBrandingCampaignName())
-                                        .type(BrandingCampaignType.DEDICATED)
-                                        .siteIds(siteIds)
-                                        .gameType(game.gameType())
-                                        .tables(List.of(BrandingCampaignTable.of(tableId)))
-                                        .assets(DedicatedBrandingAssets.of(game).toMap())
-                                        .settings(DedicatedBrandingSettings.of(game).toMap());
-}
+String expectedKeys = config.<configItems>().stream()
+                            .map(<ConfigItem>::key)
+                            .collect(Collectors.joining(", "));
+String error = ("\"/<endpoint> -> <Type> <entity> <payload> must contain exactly: %s.\"")
+        .formatted(expectedKeys);
 ```
 
-Use `dedicated(...)` for positive create+get flow calls. Use `dedicatedBuilder(...)` in
-negative tests, overriding only the field under test.
+"Not configured" case — pick a config where the lists are empty; if none exists, fail setup
+with a `QaWinfinityException`. When `error` is already used by setup, name the API message
+`expectedError`.
 
-### Flow and positive test body
+### Prerequisite with a specific attribute
 
-The flow stays thin: it builds the request through the factory, delegates to the shared
-private `createAndGetCampaign(request)`, and returns the GET response.
+When the entity requires a table/site attribute static data does not cover, create a fresh
+relation through the existing site/table flow passing that attribute; for "different value"
+negatives create a matching prerequisite for the other value, so the request reaches the rule
+under test. Call the flow directly — no private wrapper for a single call.
 
-```java
-@Step("Core: Create Dedicated branding campaign and get it")
-public BrandingCampaignResponse createAndGetDedicatedCampaign(String name, List<String> siteIds, GameType gameType,
-                                                               List<BrandingCampaignTable> tables,
-                                                               Map<String, String> assets,
-                                                               Map<String, String> settings) {
-    CreateBrandingCampaignRequest request = CreateBrandingCampaignRequest.dedicated(name, siteIds, gameType, tables,
-                                                                                    assets, settings);
-    return createAndGetCampaign(request);
-}
+### Example — exact messages (branding campaigns, create)
+
+```
+"/backoffice/v5/createBrandingCampaign -> 'GameType' must not be empty."
+"/backoffice/v5/createBrandingCampaign -> Dedicated campaign 'Assets' must not be empty."
+"/backoffice/v5/createBrandingCampaign -> Dedicated campaign 'Settings' must not be empty."
+"/backoffice/v5/createBrandingCampaign -> 'StreamId' must be empty."
+"/backoffice/v5/createBrandingCampaign -> 'Tables' must not be empty."
+"/backoffice/v5/createBrandingCampaign -> 'SiteIds' must not be empty."
+"/backoffice/v5/createBrandingCampaign -> '{SiteIds}' contains duplicate values"
+"/backoffice/v5/createBrandingCampaign -> '{Tables}' contains duplicate values"
+"/backoffice/v5/createBrandingCampaign -> Tables with id(s) %s do not match the Dedicated campaign game type %s."
+"/backoffice/v5/createBrandingCampaign -> Dedicated campaign assets must contain exactly: %s. Dedicated campaign settings must contain exactly: %s."
+"/backoffice/v5/createBrandingCampaign -> %s does not have configured dedicated assets and settings."
+"/backoffice/v5/createBrandingCampaign -> The TableId field is required."
 ```
 
-Positive test body shape:
+### Example — exact messages (branding campaigns, update Draft)
 
-```java
-String brandingCampaignName = RandomUtils.randomBrandingCampaignName();
-SiteTableRelation siteTable = coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId, GAME_TYPE,
-                                                                                   Category.BANKER_GAMES);
-List<String> siteIds = List.of(siteTable.siteId());
-List<BrandingCampaignTable> tables = List.of(BrandingCampaignTable.of(siteTable.tableId()));
-Game game = backOfficeApiGatewayFlows.getGame(GAME_TYPE);
-Map<String, String> assets = DedicatedBrandingAssets.of(game).toMap();
-Map<String, String> settings = DedicatedBrandingSettings.of(game).toMap();
-
-brandingCampaignsFlows.createAndGetDedicatedCampaign(brandingCampaignName, siteIds, GAME_TYPE, tables, assets,
-                                                     settings)
-                      .verifyDedicatedCampaign(brandingCampaignName, siteIds, GAME_TYPE, tables, assets, settings);
+```
+"/backoffice/v5/updateBrandingCampaign -> Campaign type cannot be changed."
+"/backoffice/v5/updateBrandingCampaign -> 'SiteIds' must not be empty."
+"/backoffice/v5/updateBrandingCampaign -> 'GameType' must be empty."
+"/backoffice/v5/updateBrandingCampaign -> 'Tables' must not be empty."
+"/backoffice/v5/updateBrandingCampaign -> 'StreamId' must be empty."
+"/backoffice/v5/updateBrandingCampaign -> '{Tables}' contains duplicate values"
+"/backoffice/v5/updateBrandingCampaign -> '{SiteIds}' contains duplicate values"
+"/backoffice/v5/updateBrandingCampaign -> Generic campaign 'Settings' must be null."
+"/backoffice/v5/updateBrandingCampaign -> 'Name' must not be empty."
+"/backoffice/v5/updateBrandingCampaign -> 'BrandedTableName' must be between 1 and 40 characters. You entered %s characters."
+"/backoffice/v5/updateBrandingCampaign -> The length of 'Name' must be 200 characters or fewer. You entered 201 characters."
 ```
 
-### Full GET assertion shape
-
-`verifyDedicatedCampaign(...)` lives on `BrandingCampaignAssertions`, not on the flow. It
-checks the full response and returns the response for optional terminal checks such as
-`verifyBrandedTableNames(...)`.
-
-```java
-default BrandingCampaignResponse verifyDedicatedCampaign(String name, List<String> siteIds, GameType gameType,
-                                                         List<BrandingCampaignTable> tables,
-                                                         Map<String, String> assets,
-                                                         Map<String, String> settings) {
-    BrandingCampaignResponse brandingCampaign = getSelf();
-    SoftAssertions.assertSoftly(softAssertions -> {
-        softAssertions.assertThat(brandingCampaign.name()).as("name").isEqualTo(name);
-        softAssertions.assertThat(brandingCampaign.type()).as("type")
-                      .isEqualTo(BrandingCampaignType.DEDICATED);
-        softAssertions.assertThat(brandingCampaign.status()).as("status")
-                      .isEqualTo(BrandingCampaignStatus.DRAFT);
-        softAssertions.assertThat(brandingCampaign.gameType()).as("gameType").isEqualTo(gameType);
-        softAssertions.assertThat(brandingCampaign.sitesInfo()).as("sitesInfo").extracting(SiteInfo::id)
-                      .containsExactlyInAnyOrderElementsOf(siteIds);
-        softAssertions.assertThat(brandingCampaign.partnersInfo()).as("partnersInfo").isEmpty();
-        softAssertions.assertThat(brandingCampaign.assets()).as("assets").isEqualTo(assets);
-        softAssertions.assertThat(brandingCampaign.settings()).as("settings").isEqualTo(settings);
-        softAssertions.assertThat(brandingCampaign.tables()).as("tables").hasSize(tables.size());
-        softAssertions.assertThat(brandingCampaign.tables()).as("tables")
-                      .extracting(BrandingCampaignTable::tableId, BrandingCampaignTable::brandedTableName)
-                      .containsExactlyInAnyOrderElementsOf(
-                              tables.stream()
-                                    .map(t -> tuple(t.tableId(), t.brandedTableName()))
-                                    .toList());
-    });
-    return brandingCampaign;
-}
-```
-
-### Dedicated validation cases and exact error messages
-
-Validation methods in MR 6094 are `@CriticalTag` and use the env set `{CERTIFICATION, PREPROD,
-RELEASE, LATEST, CORE_QA}` (all `brandingcampaigns` methods run certification). The request
-starts from `dedicatedBuilder(...)` and changes exactly one field, then asserts
-`statusCodeIs400()` and the deterministic error body.
-
-Common exact messages:
-
-```java
-String error = "\"/backoffice/v5/createBrandingCampaign -> 'GameType' must not be empty.\"";
-String error = "\"/backoffice/v5/createBrandingCampaign -> Dedicated campaign 'Assets' must not be empty.\"";
-String error = "\"/backoffice/v5/createBrandingCampaign -> Dedicated campaign 'Settings' must not be empty.\"";
-String error = "\"/backoffice/v5/createBrandingCampaign -> 'StreamId' must be empty.\"";
-String error = "\"/backoffice/v5/createBrandingCampaign -> 'Tables' must not be empty.\"";
-String error = "\"/backoffice/v5/createBrandingCampaign -> 'SiteIds' must not be empty.\"";
-String error = "\"/backoffice/v5/createBrandingCampaign -> '{SiteIds}' contains duplicate values\"";
-String error = "\"/backoffice/v5/createBrandingCampaign -> '{Tables}' contains duplicate values\"";
-```
-
-Dynamic messages use `.formatted(...)` with the parenthesized multiline pattern:
-
-```java
-String error = ("\"/backoffice/v5/createBrandingCampaign -> Tables with id(s) %s do not match " +
-        "the Dedicated campaign game type %s.\"")
-        .formatted(siteTable.tableId(), game.gameType().getValue());
-```
-
-```java
-String expectedDedicatedBrandingAssets = game.dedicatedBrandingAssets().stream()
-                                             .map(DedicatedBrandingAsset::key)
-                                             .collect(Collectors.joining(", "));
-String expectedDedicatedBrandingSettings = game.dedicatedBrandingSettings().stream()
-                                               .map(DedicatedBrandingSetting::key)
-                                               .collect(Collectors.joining(", "));
-String error = ("\"/backoffice/v5/createBrandingCampaign -> Dedicated campaign assets must contain exactly: %s. " +
-        "Dedicated campaign settings must contain exactly: %s.\"")
-        .formatted(expectedDedicatedBrandingAssets, expectedDedicatedBrandingSettings);
-```
-
-For the "not configured gameType" case, do not assume a fixed enum. Pick a game returned by
-`getGames("v5")` where both Dedicated config lists are empty, create a table of that game's type,
-and throw a useful setup error if none exists:
-
-```java
-String error = "There is no game without dedicated configuration for game type %s.".formatted(GAME_TYPE.getValue());
-Game notConfiguredGame = backofficeSteps.getGames("v5").statusCodeIs200().body().data().stream()
-                                        .filter(g -> g.gameType() != GAME_TYPE)
-                                        .filter(g -> g.dedicatedBrandingAssets().isEmpty())
-                                        .filter(g -> g.dedicatedBrandingSettings().isEmpty())
-                                        .findFirst()
-                                        .orElseThrow(() -> new QaWinfinityException(error));
-```
-
-Then assert the API error in a separate variable if `error` is already used by setup:
-
-```java
-String expectedError = "\"/backoffice/v5/createBrandingCampaign -> " + notConfiguredGameType.getValue() +
-        " does not have configured dedicated assets and settings.\"";
-brandingCampaignsSteps.create(request).statusCodeIs400().verifyErrorBody(expectedError);
-```
-
-### Update Draft Generic validation cases and exact error messages
-
-Update validation (MR 6131) mirrors the create ones: `@CriticalTag`, env set
-`{CERTIFICATION, PREPROD, RELEASE, LATEST, CORE_QA}`, endpoint
-`/backoffice/v5/updateBrandingCampaign`. The request starts from `genericBuilder(...)`,
-changes exactly one field, then asserts `statusCodeIs400()` and the deterministic error body.
-
-Common exact messages:
-
-```java
-String error = "\"/backoffice/v5/updateBrandingCampaign -> Campaign type cannot be changed.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> 'SiteIds' must not be empty.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> 'GameType' must be empty.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> 'Tables' must not be empty.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> 'StreamId' must be empty.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> '{Tables}' contains duplicate values\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> '{SiteIds}' contains duplicate values\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> Generic campaign 'Settings' must be null.\"";
-String error = "\"/backoffice/v5/updateBrandingCampaign -> 'Name' must not be empty.\"";
-```
-
-Dynamic messages use `.formatted(...)` with the parenthesized multiline pattern (see
-[Multiline formatted strings](#multiline-formatted-strings)). The `'BrandedTableName'` length
-error depends on the provider value, so build it from the length rather than a hardcoded number:
-
-```java
-String error = ("\"/backoffice/v5/updateBrandingCampaign -> 'BrandedTableName' must be between " +
-        "1 and 40 characters. You entered %s characters.\"")
-        .formatted(invalidBrandedTableName.length());
-```
-
-The `'Name'` 201-chars error stays static because the test feeds a fixed length:
-
-```java
-String error = "\"/backoffice/v5/updateBrandingCampaign -> The length of 'Name' must be 200 characters or " +
-        "fewer. You entered 201 characters.\"";
-```
-
-### Name boundary provider
-
-Dedicated name length positives use `@TestTemplate` with a provider; the test method has no
-tags/allure/display annotations:
-
-```java
-@TestTemplate
-@ExtendWith(CampaignNameLengthContextProvider.class)
-void createDedicatedCampaignWithNameLength(Integer length) {
-    createAndVerifyDedicatedCampaignWithNameLength(RandomStringUtils.randomAlphabetic(length));
-}
-```
-
-Provider:
-
-```java
-public class CampaignNameLengthContextProvider implements BaseTestTemplateInvocationProvider {
-
-    private static final String TEMPLATE = "Create Dedicated campaign with %s name and verify via GET";
-
-    @Override
-    public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
-        return Stream.of(
-                create("1 char", 1, "101832", context),
-                create("200 chars", 200, "101833", context)
-        );
-    }
-
-    private TestTemplateInvocationContext create(String name, int length, String allureId,
-                                                 ExtensionContext context) {
-        return buildTestContext(context)
-                .displayName(TEMPLATE, name)
-                .allureId(allureId)
-                .value(length)
-                .scopes(criticalTag())
-                .environments(List.of(CERTIFICATION, PREPROD, RELEASE, LATEST, CORE_QA))
-                .build();
-    }
-}
-```
+A length error depending on a provider value is built from the value
+(`.formatted(invalidValue.length())`); a fixed-length test keeps a static message.
 
 ---
 
 ## State-dependent operation tests
 
-Template for testing an operation on an entity that was first moved to a non-initial state
-(e.g. update of an Active entity). Placeholders: `<Operation>`, `<State>`, `<Transition>`,
-`<Type>`, `<Entity>`, `<Status>`. Concrete names come from the domain — look them up in the
-repo, do not copy them from the example.
+Testing an operation on an entity first moved to a non-initial state (e.g. update of an
+Active entity).
 
-### Class header (template)
+### Class header
 
 ```java
 @Tags({
-        @Tag(<COMPONENT_TAG>),
-        @Tag(<COMPONENT_VERSION_TAG>),
-        @Tag(<AREA_TAG>),
+        @Tag(<COMPONENT>),
+        @Tag(<COMPONENT>_<VERSION>),
+        @Tag(<AREA>),
         @Tag(<OPERATION>_<STATE>_<TYPE>_<DOMAIN>)
 })
 @AllureComponentCore
@@ -1091,37 +701,37 @@ repo, do not copy them from the example.
 class <Operation><State><Type><Entity>sTests extends BaseApiTest {
 ```
 
-New tag constant in the matching tag class:
-
 ```java
+// Core<Service>Tags
 public static final String <OPERATION>_<STATE>_<TYPE>_<DOMAIN> = "<operation><State><Type><Domain>";
 ```
 
-### Flow — create in the target state (template)
+### Flow — create in the target state
 
 ```java
 @Step("Core: Create, <transition> and get <Type> <entity>")
 public <Entity>Response create<Transition>AndGet<Type><Entity>(<prerequisites>) {
-    <Create>Request request = <Create>Request.<type>(<random name>, <prerequisites>, <random payload>);
+    Create<Entity>Request request = Create<Entity>Request.<type>(RandomUtils.random<Entity>Name(),
+                                                                 <prerequisites>, <random payload>);
     return create<Transition>AndGet<Entity>(request);
 }
 
-private <Entity>Response create<Transition>AndGet<Entity>(<Create>Request request) {
-    String id = <entity>Steps.create(request).statusCodeIs201().body().<id>();
-    Assertions.assertThat(id).as("id").isNotNull();
-    <entity>Steps.updateStatus(id, <Status>.<STATE>).statusCodeIs204();
-    return <entity>Steps.get(id).statusCodeIs200().body();
+private <Entity>Response create<Transition>AndGet<Entity>(Create<Entity>Request request) {
+    String id = <entity>Steps.create(request).statusCodeIs201().body().<entity>Id();
+    Assertions.assertThat(id).as("<entity>Id").isNotNull();
+    <entity>Steps.updateStatus(id, <Entity>Status.<STATE>).statusCodeIs204();
+    return <entity>Steps.get<Entity>(id).statusCodeIs200().body();
 }
 ```
 
-### Status-aware verify (template)
+### Status-aware verify
 
 ```java
 default <Entity>Response verify<State><Type><Entity>(<expected fields>) {
-    return verify<Type><Entity>(<expected fields>, <Status>.<STATE>);
+    return verify<Type><Entity>(<expected fields>, <Entity>Status.<STATE>);
 }
 
-private <Entity>Response verify<Type><Entity>(<expected fields>, <Status> status) {
+private <Entity>Response verify<Type><Entity>(<expected fields>, <Entity>Status status) {
     <Entity>Response actual = getSelf();
     SoftAssertions.assertSoftly(softAssertions -> {
         ...
@@ -1131,9 +741,10 @@ private <Entity>Response verify<Type><Entity>(<expected fields>, <Status> status
 }
 ```
 
-The private method carries no state in its name — it is called from every state wrapper.
+The private method carries no state in its name — every state wrapper calls it. Rename existing
+callers in the same MR.
 
-### Test bodies (template)
+### Test bodies
 
 Positive — arrange the entity in the state, blank line, then build the request from the
 response values, changing only what the scenario allows:
@@ -1143,7 +754,8 @@ response values, changing only what the scenario allows:
 <Entity>Response entity = <entity>Flows.create<Transition>AndGet<Type><Entity>(<prerequisites>);
 
 <new values for the scenario>
-<Update>Request request = <Update>Request.<type>(entity.id(), entity.name(), <changed fields>, <unchanged fields from entity>);
+Update<Entity>Request request = Update<Entity>Request.<type>(entity.id(), entity.name(),
+                                                             <changed fields>, <unchanged fields from entity>);
 <entity>Flows.updateAndGet<Entity>(request)
              .verify<State><Type><Entity>(entity.name(), <expected fields>);
 ```
@@ -1151,7 +763,8 @@ response values, changing only what the scenario allows:
 Negative — same arrange, change exactly one field, everything else from the response:
 
 ```java
-<Update>Request request = <Update>Request.<type>(entity.id(), <changed field>, <all other fields from entity>);
+Update<Entity>Request request = Update<Entity>Request.<type>(entity.id(), <changed field>,
+                                                             <all other fields from entity>);
 String error = "\"/<endpoint> -> <message>\"";
 <entity>Steps.update(request).statusCodeIs400().verifyErrorBody(error);
 ```
@@ -1163,150 +776,126 @@ unavoidable, override every non-target field back to the entity's values.
 Count rule — existing items unchanged + one fully valid extra item. Duplicate rule — the same
 id twice (`List.of(id, id)`).
 
-### Naming (template)
+### Naming
 
-| Kind     | Method                                              | DisplayName                                                  |
-|----------|-----------------------------------------------------|--------------------------------------------------------------|
-| Positive | `<operation><State><Type><Entity><Scenario>`        | `<Operation> <State> <Type> <entity>: <scenario>`            |
-| Negative | `<operation><State><Type><Entity><Scenario>CheckError` | `<Operation> <State> <Type> <entity>: <scenario> and check error` |
+| Kind     | Method                                                    | DisplayName                                                        |
+|----------|-----------------------------------------------------------|--------------------------------------------------------------------|
+| Positive | `<operation><State><Type><Entity><Scenario>`              | `<Operation> <State> <Type> <entity>: <scenario>`                  |
+| Negative | `<operation><State><Type><Entity><Scenario>CheckError`    | `<Operation> <State> <Type> <entity>: <scenario> and check error`  |
 
-### Example (branding campaigns, update Active)
+### Example — exact messages (branding campaigns, update Active)
 
-Merged reference implementation: `update/UpdateActive*CampaignsTests` in
-`core/backoffice/brandingcampaigns`. Short illustration of the negative pattern:
-
-```java
-BrandingCampaignResponse campaign = brandingCampaignsFlows.createActivateAndGetGenericCampaign(siteIds, tables);
-
-String newName = RandomUtils.randomBrandingCampaignName();
-GenericAssets assets = new GenericAssets(campaign.assets());
-UpdateBrandingCampaignRequest request = UpdateBrandingCampaignRequest.generic(campaign.id(), newName,
-                                                                              siteIds, tables, assets);
-String error = "\"/backoffice/v5/updateBrandingCampaign -> Campaign name cannot be changed while it is Active.\"";
-brandingCampaignsSteps.update(request).statusCodeIs400().verifyErrorBody(error);
+```
+"/backoffice/v5/updateBrandingCampaign -> Table %s cannot be updated while the campaign is Active. Only adding new tables or removing existing ones is allowed."
+"/backoffice/v5/updateBrandingCampaign -> Campaign name cannot be changed while it is Active."
+"/backoffice/v5/updateBrandingCampaign -> Assets and Settings cannot be changed while the campaign is Active."
+"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign requires exactly one table."
+"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign 'Assets' must be null."
+"/backoffice/v5/updateBrandingCampaign -> BlueScreen campaign 'Settings' must be null."
+"/backoffice/v5/updateBrandingCampaign -> 'StreamId' must not be empty."
 ```
 
-Active-specific error messages seen in this domain (confirm on a live run):
-
-- `Table %s cannot be updated while the campaign is Active. Only adding new tables or removing existing ones is allowed.`
-  — any change of an existing table's attributes; adding/removing whole tables/sites is allowed.
-- `Campaign name cannot be changed while it is Active.`
-- `Assets and Settings cannot be changed while the campaign is Active.`
-- `<Type> campaign requires exactly one table.`
+"Table %s cannot be updated" fires for any change of an existing item's attributes (set,
+change, remove); adding/removing whole items is allowed in that state.
 
 ---
 
 ## Awaitility patterns
 
-When a test depends on async processing (Kafka message consumption, cache invalidation), use
-**Awaitility** to poll. Put the wait logic in a **Flow method**, not in the test. Import
-`org.awaitility.Awaitility` and `org.awaitility.Durations`.
+Async results (Kafka consumption, cache invalidation) are polled with **Awaitility** in a
+**Flow method**, not in the test. Imports: `org.awaitility.Awaitility`, `org.awaitility.Durations`.
 
 ### Wait until condition becomes true (`until`)
 
-Poll until the API response satisfies a condition, then return the response body. The lambda
-inside `until()` stays inline and simple — avoid `Predicate`, `AtomicReference`, and complex
-state (review feedback MR 6205):
-
 ```java
-@Step("Core: Wait until recently played contains all tableIds {1}")
-public RecentlyPlayedResponse waitRecentlyPlayedContains(String playerId, List<String> tableIds) {
+@Step("Core: Wait until <thing> contains {1}")
+public <Thing>Response wait<Thing>Contains(String <ownerId>, List<String> expected) {
     return Awaitility.with()
                      .pollInterval(Durations.ONE_SECOND)
                      .await()
                      .pollInSameThread()
                      .atMost(Durations.TEN_SECONDS)
-                     .until(() -> recentlyPlayed(playerId),
-                            r -> r.statusCodeIs200().body().tableIds().containsAll(tableIds))
+                     .until(() -> get<Thing>(<ownerId>),
+                            r -> r.statusCodeIs200().body().<items>().containsAll(expected))
                      .body();
 }
 
-private RestResponse<RecentlyPlayedResponse, String> recentlyPlayed(String playerId) {
-    return playerStatsV6Steps.recentlyPlayed(RecentlyPlayedParams.of(playerId));
+private RestResponse<<Thing>Response, String> get<Thing>(String <ownerId>) {
+    return <x>Steps.<call>(<Thing>Params.of(<ownerId>));
 }
 ```
 
 ### Settle-window wait (`during`)
 
-When a negative async assertion cannot distinguish "not yet consumed" from "consumed and
-absent" (e.g. a zero-bet round must NOT appear in recently played), use `during()` to assert
-the condition stays true for a settle window. Add a comment explaining why the settle window
-is needed:
+For "must NOT appear" checks, where "not yet consumed" and "consumed and absent" look the same.
+Add a comment explaining why the settle window is needed:
 
 ```java
-@Step("Core: Wait until recently played does not contain tableId {1}")
-public RecentlyPlayedResponse waitRecentlyPlayedDoesNotContain(String playerId, String tableId) {
-    // A zero-bet round never adds a tableId, so an empty snapshot can mean either "consumed and absent"
-    // or "not yet consumed" — both look empty. Wait for a 5s settle window in which the endpoint stays
-    // empty without the table ever surfacing, then assert absence to avoid a false pass.
+@Step("Core: Wait until <thing> does not contain {1}")
+public <Thing>Response wait<Thing>DoesNotContain(String <ownerId>, String unexpected) {
+    // <why an empty snapshot is ambiguous and why the settle window is required>
     Awaitility.with()
               .pollInterval(Durations.ONE_SECOND)
               .await()
               .pollInSameThread()
               .during(Durations.FIVE_SECONDS)
               .atMost(Durations.TEN_SECONDS)
-              .until(() -> recentlyPlayed(playerId),
-                     r -> !r.statusCodeIs200().body().tableIds().contains(tableId));
-    return recentlyPlayed(playerId).statusCodeIs200().body();
+              .until(() -> get<Thing>(<ownerId>),
+                     r -> !r.statusCodeIs200().body().<items>().contains(unexpected));
+    return get<Thing>(<ownerId>).statusCodeIs200().body();
 }
 ```
 
-Key rules:
+Rules:
 - **Keep `until()` lambdas inline** — no `Predicate` variables, no `AtomicReference`.
-- **`pollInSameThread()`** — always include it (avoids thread-safety issues with RestClient).
-- **`during()` vs `until()`** — `until()` for positive expectations (data appears),
-  `during()` for negative expectations (data must NOT appear, need settle window).
-- **Consolidate wait methods** — use `List<String> tableIds` parameter to handle both single
-  and multiple table checks, not separate overloads (review feedback MR 6205).
+- **`pollInSameThread()`** — always (RestClient thread-safety).
+- **`until()`** for "data appears", **`during()`** for "data must NOT appear".
+- **One wait method with a `List` parameter** instead of single/multi overloads.
 
 ---
 
 ## QueryParamsConverter pattern
 
-For GET endpoints with query parameters, create a `Params` class implementing
-`QueryParamsConverter` under `core/params/<service>/<domain>/`. Use `@Getter`, `@Builder`,
-`@AllArgsConstructor`, a static `.of()` factory, and a nested `Param` class for param name
-constants:
+GET query parameters go to a `<Query>Params` class under `core/params/<service>/<domain>/`:
 
 ```java
 @Getter
 @Builder
 @AllArgsConstructor
-public class RecentlyPlayedParams implements QueryParamsConverter {
+public class <Query>Params implements QueryParamsConverter {
 
-    private String playerId;
+    private String <param>;
 
-    public static RecentlyPlayedParams of(String playerId) {
-        return RecentlyPlayedParams.builder().playerId(playerId).build();
+    public static <Query>Params of(String <param>) {
+        return <Query>Params.builder().<param>(<param>).build();
     }
 
     @Override
     public List<QueryParam> convert() {
         List<QueryParam> result = new ArrayList<>();
-        Optional.ofNullable(playerId).ifPresent(playerId -> result.add(new QueryParam(Param.PLAYER_ID, playerId)));
+        Optional.ofNullable(<param>).ifPresent(value -> result.add(new QueryParam(Param.<PARAM>, value)));
         return result;
     }
 
     @NoArgsConstructor(access = AccessLevel.PRIVATE)
     static class Param {
 
-        static final String PLAYER_ID = "playerId";
+        static final String <PARAM> = "<param>";
     }
 }
 ```
 
-In the Steps class, pass the params via `.objectQueryParams(params)`:
-
 ```java
-@Step("Core: Get recently played tables")
-public RestResponse<RecentlyPlayedResponse, String> recentlyPlayed(RecentlyPlayedParams params) {
+// Steps
+@Step("Core V<N>: Get <thing>")
+public RestResponse<<Thing>Response, String> get<Thing>(<Query>Params params) {
     HttpRequest request = HttpRequest.builder()
                                      .method(Method.GET)
                                      .baseUrl(haproxyUrl)
-                                     .path(BASE_PATH, V_6, RECENTLY_PLAYED)
+                                     .path(BASE_PATH, V_<N>, <ENDPOINT>)
                                      .objectQueryParams(params)
                                      .build();
-    return haproxyClient.sendRequest(request, RecentlyPlayedResponse.class, String.class);
+    return haproxyClient.sendRequest(request, <Thing>Response.class, String.class);
 }
 ```
 
@@ -1314,107 +903,81 @@ public RestResponse<RecentlyPlayedResponse, String> recentlyPlayed(RecentlyPlaye
 
 ## `@Step` on assertions interface methods
 
-Assertion methods in `*Assertions` interfaces can carry `@Step` annotations for Allure
-reporting. This makes each verification visible as a separate step in the Allure report.
-Use `{0}`, `{1}` for parameter placeholders in the step name:
+Simple verifies may carry `@Step` so each check is a separate Allure step (`{0}`, `{1}` —
+parameter placeholders):
 
 ```java
-public interface RecentlyPlayedResponseAssertions extends ObjectAssertions<RecentlyPlayedResponse> {
+public interface <Thing>ResponseAssertions extends ObjectAssertions<<Thing>Response> {
 
-    @Step("Verify recently played contains table {0}")
-    default RecentlyPlayedResponse verifyTableIdsContains(String tableId) {
-        assertThat(getSelf().tableIds()).as("tableIds").contains(tableId);
+    @Step("Verify <thing> contains {0}")
+    default <Thing>Response verify<Items>Contains(String item) {
+        assertThat(getSelf().<items>()).as("<items>").contains(item);
         return getSelf();
     }
 
-    @Step("Verify recently played table ids are empty")
-    default RecentlyPlayedResponse verifyTableIdsEmpty() {
-        assertThat(getSelf().tableIds()).as("tableIds").isEmpty();
-        return getSelf();
-    }
-
-    @Step("Verify recently played table ids are exactly {0}")
-    default RecentlyPlayedResponse verifyTableIdsContainsExactly(String... tableIds) {
-        assertThat(getSelf().tableIds()).as("tableIds").containsExactly(tableIds);
+    @Step("Verify <thing> is empty")
+    default <Thing>Response verify<Items>Empty() {
+        assertThat(getSelf().<items>()).as("<items>").isEmpty();
         return getSelf();
     }
 }
 ```
 
-Key rules:
-- Each verify method returns `getSelf()` for chaining.
-- Inside assertions interfaces, `static import assertThat` is allowed (unlike test classes
-  which use `Assertions.assertThat`).
-- Simple single-assertion verifies (contains, isEmpty, containsExactly) do NOT need
-  `SoftAssertions` — the 2+ threshold applies when multiple fields are checked in one method.
+Rules:
+- Each verify returns `getSelf()` for chaining.
+- Inside assertions interfaces a static import of `assertThat` is allowed.
+- Single-assertion verifies do not need `SoftAssertions`.
 
 ---
 
 ## Session-based tests (Kafka / game rounds)
 
-When the test exercises game-round processing (Kafka messages, player stats), use
-`corePlayerFlows.startSession(gameType)` to create a player session. The session auto-selects
-a static table for the game type — no site/table creation needed.
+Game-round processing tests start a player session through the existing player flow; it picks
+a static table for the game type — no site/table creation needed:
 
 ```java
-private static final GameType RNG_GAME_TYPE = GameType.RNG_ROULETTE;
-private static final GameType SGLM_GAME_TYPE = GameType.ROULETTE;
+private static final GameType <KIND>_GAME_TYPE = GameType.<GAME>;
 
-Session session = corePlayerFlows.startSession(RNG_GAME_TYPE);
+Session session = <player>Flows.startSession(<KIND>_GAME_TYPE);
 String tableId = session.tableId();
 String playerId = session.internalUserId();
 ```
 
-For cross-session tests (same user, different game type / table), create a second session from
-the same `User` via `Session.of(tableId, gameType, user)`:
+Cross-session (same user, another game type/table):
 
 ```java
-Session rngSession = corePlayerFlows.startSession(RNG_GAME_TYPE);
-User user = rngSession.user();
-String sglmTableId = coreStaticTables.getStaticTableIdByGameType(SGLM_GAME_TYPE);
-Session sglmSession = Session.of(sglmTableId, SGLM_GAME_TYPE, user);
+Session firstSession = <player>Flows.startSession(<KIND_A>_GAME_TYPE);
+User user = firstSession.user();
+String secondTableId = <staticTables>.getStaticTableIdByGameType(<KIND_B>_GAME_TYPE);
+Session secondSession = Session.of(secondTableId, <KIND_B>_GAME_TYPE, user);
 ```
 
 ### Kafka message helpers in tests
 
-Extract message-sending logic into private helpers on the test class. Each helper is one
-message type; SGLM rounds require `sendStartMessage()` before `sendFinishMessage()` /
-`sendCancelMessage()` (the game loop is Start → Finish/Cancel):
+One private helper per message type; live-game rounds need a start message before
+finish/cancel:
 
 ```java
-private void sendRngFinishWithPositiveBet(Session session) {
+private void send<GameKind>FinishWith<Condition>(Session session) {
     String gameId = RandomUtils.randomGameId();
-    RngGameData gameData = RngGameData.of(session);
-    coreRngStatisticFlows.sendFinishRngMessage(session, gameId, gameData);
-}
-
-private void sendSglmFinishWithPositiveBet(Session session) {
-    String gameId = RandomUtils.randomGameId();
-    coreStatisticFlows.sendStartMessage(session.tableId(), gameId, SGLM_GAME_TYPE);
-    coreStatisticFlows.sendFinishMessage(session, gameId);
-}
-
-private void sendSglmCancelWithPositiveBet(Session session) {
-    String gameId = RandomUtils.randomGameId();
-    coreStatisticFlows.sendStartMessage(session.tableId(), gameId, SGLM_GAME_TYPE);
-    coreStatisticFlows.sendCancelMessage(gameId, session.tableId(), SGLM_GAME_TYPE,
-                                         List.of(PlayerDataMessage.of(session)));
+    <statistic>Flows.sendStartMessage(session.tableId(), gameId, <KIND>_GAME_TYPE);
+    <statistic>Flows.sendFinishMessage(session, gameId);
 }
 ```
 
 ### Versioned Steps class for non-BackOffice services
 
-Use `@RequiredArgsConstructor` + `private final` injection (not `@LazyAutowired`) for Steps
-and Flows, with `@Value` for config properties. Path segments as `static final` constants:
+`@RequiredArgsConstructor` + `private final` injection, `@Value` for config, path segments as
+constants:
 
 ```java
 @Component
 @RequiredArgsConstructor
-public class PlayerStatsV6Steps {
+public class <Service>V<N>Steps {
 
-    private static final String BASE_PATH = "/playerstats";
-    private static final String V_6 = "v6";
-    private static final String RECENTLY_PLAYED = "/recentlyPlayed";
+    private static final String BASE_PATH = "/<service>";
+    private static final String V_<N> = "v<N>";
+    private static final String <ENDPOINT> = "/<endpoint>";
 
     private final RestClient haproxyClient;
 
@@ -1423,44 +986,44 @@ public class PlayerStatsV6Steps {
 }
 ```
 
-### Two coexisting versions of one endpoint (MR 6262)
+### Two coexisting versions of one endpoint
 
-When both `v1` and `v2` of the same endpoint are tested, the reviewer requires one Steps
-class per version, the version baked into `BASE_PATH`, and version expressed by **package**
-(never by class name or a `version` method parameter):
+One Steps class per version, version in `BASE_PATH`, versioned test **package**:
 
 ```
-api/src/main/java/live/winfinity/at/core/gateway/steps/replays/
-├── v1/ReplaysV1Steps.java   // BASE_PATH = "/replays/api/v1"; also keeps shared read endpoints
-└── v2/ReplaysV2Steps.java   // BASE_PATH = "/replays/api/v2"; internal/backoffice client
+api/src/main/java/live/winfinity/at/core/gateway/steps/<service>/
+├── v1/<Service>V1Steps.java   // BASE_PATH = "/<service>/api/v1"; keeps shared read endpoints
+└── v2/<Service>V2Steps.java   // BASE_PATH = "/<service>/api/v2"
 
-api/src/test/java/live/winfinity/at/core/replays/
-├── v1/ReplaysPreviewImageTests.java   // @Feature("API | Replays | v1 | Preview image")
-└── v2/ReplaysPreviewImageTests.java   // @Feature("API | Replays | v2 | Preview image")
-                                       // NOTE: class name has NO "V2" token
-```
-
-```java
-// v1 — unversioned read endpoint keeps its own constant
-private static final String BASE_PATH = "/replays/api/v1";
-private static final String REPLAYS_API = "/replays/api";   // getReplay lives here, unversioned
-// v2 — version in the path, authorized client
-private static final String BASE_PATH = "/replays/api/v2";
+api/src/test/java/live/winfinity/at/core/<service>/
+├── v1/<Feature>Tests.java     // @Feature("API | <Service> | v1 | <Feature>")
+└── v2/<Feature>Tests.java     // @Feature("API | <Service> | v2 | <Feature>") — no V2 in class name
 ```
 
 Rules:
 
-- **Do NOT** put both versions in one class with `postShort(..., String version)` overloads or
-  `uploadPreviewImageV2(...)` method-name suffixes — the reviewer rejects both; split classes.
-- **Test class names drop the version** (`v2/ReplaysShortTests`, not `ReplaysV2ShortTests`);
-  `@Feature` uses lowercase `v1`/`v2`.
-- A v2 test that needs a shared read step (`search`, `getReplay`) autowires `ReplaysV1Steps`
-  separately — the common read method stays in the v1 class, it is not duplicated into v2.
-- **Authorized/internal endpoints** (v2 internal/backoffice here) use a dedicated RestClient
-  bean fed by a `*TokenProvider` + `BearerTokenInterceptor`; inject that client in the v2
-  Steps. A 403 on such an endpoint usually means the Steps used the wrong (unauthorized)
-  client, or the interceptor bean was wired by the wrong name — bean params resolve by name,
-  so the constructor/`@Bean` parameter name must match the intended interceptor bean.
+- **Do NOT** keep both versions in one class with a `version` parameter or `*V2` method
+  suffixes — split classes.
+- A v2 test needing a shared read step autowires the v1 Steps class; the read method is not
+  duplicated into v2.
+- **Authorized/internal endpoints** use a dedicated RestClient bean fed by a `*TokenProvider` +
+  `BearerTokenInterceptor`. A 403 usually means the wrong (unauthorized) client or an
+  interceptor bean wired by the wrong name — bean params resolve by name.
+
+---
+
+## Project structure examples
+
+Two merged domains that follow the [canonical layout](SKILL.md#project-structure-canonical-core-feature-layout):
+
+- BackOffice branding campaigns — `core/enums/brandingcampaigns/`,
+  `core/gateway/pojo/backoffice/brandingcampaigns/{create,get,update,harddelete}/`,
+  `core/gateway/steps/backoffice/brandingcampaigns/`, `core/gateway/flows/backOffice/brandingcampaigns/`,
+  tests in `core/backoffice/brandingcampaigns/{create,update}/`.
+- PlayerStats v6 — `core/gateway/pojo/playerstats/`, `core/gateway/steps/playerstats/v6/`,
+  `core/gateway/flows/playerstats/v6/`, `core/params/playerstats/`, tests in `core/playerstats/`.
+
+Open them to see a full working implementation of the templates above.
 
 ---
 

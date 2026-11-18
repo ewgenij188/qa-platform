@@ -83,27 +83,24 @@ Standard CORE `@Tag` set, scope tags and component tag — see
 [reference.md](reference.md#standard-tag-set).
 
 Tags live in tag-constant classes and are imported statically — never hardcode tag strings.
-Common CORE area tags live in `CoreTags`; BackOffice subtype/entity tags live in
-`core/consts/tags/backoffice/CoreBackofficeTags` (e.g. `DEDICATED_BRANDING`). When a **new
-test class** has no fitting subtype tag, add the constant to the matching tag class first.
+Common CORE area tags live in `CoreTags`; service/entity tags live in
+`core/consts/tags/<service>/Core<Service>Tags`. When a **new test class** has no fitting
+subtype tag, add the constant to the matching tag class first.
 Standard `@Tag` set, column formatting and the no-`FEATURE_*` rule — see
 [reference.md](reference.md#standard-tag-set).
 
 Decision rules unique to this skill:
 
 - **Entity-type test classes each get a new type tag** — a distinct entity/subtype carries its
-  own tag (e.g. `GENERIC_BRANDING`, `BLUE_SCREEN_BRANDING`, `PHYSICAL_BRANDING`) alongside the
-  component tag. **Add one new type-tag constant to the matching tag class** (e.g.
-  `CoreBackofficeTags` for BackOffice subtype tags; tag value is the camelCased entity name);
-  do not reuse another entity's tag.
-- **All methods in the `brandingcampaigns` folder run certification** — positive/smoke and
-  `@CriticalTag` validation methods all use the same env set
-  `{CERTIFICATION, PREPROD, RELEASE, LATEST, CORE_QA}` (certification has the static tables and
-  `backoffice.test-folder-id` these tests need). Outside that folder, `@CriticalTag` validation
-  methods drop `CERTIFICATION` and use `{PREPROD, RELEASE, LATEST, CORE_QA}`.
-- **Branding campaign subtype tests** use the shared component tags
-  `{CORE_BACKOFFICE, CORE_BACKOFFICE_V5, BRANDING}` plus a subtype tag from
-  `CoreBackofficeTags`, e.g. `DEDICATED_BRANDING`.
+  own tag `<TYPE>_<DOMAIN>` (camelCased value) alongside the component tags. **Add one new
+  type-tag constant to the matching tag class**; do not reuse another entity's tag.
+- **Env set follows the folder convention** — if every method in the target folder runs
+  certification (the BackOffice branding folder does), positives and `@CriticalTag`
+  validations all use `{CERTIFICATION, PREPROD, RELEASE, LATEST, CORE_QA}`. Elsewhere
+  `@CriticalTag` validation methods drop `CERTIFICATION`: `{PREPROD, RELEASE, LATEST, CORE_QA}`.
+  Check neighbouring classes before choosing.
+- **Subtype test classes** use the shared component tags of the area
+  (`{<COMPONENT>, <COMPONENT>_<VERSION>, <AREA>}`) plus their subtype tag.
 - **State-specific operation classes get an operation+state+type tag** — constant
   `<OPERATION>_<STATE>_<TYPE>_<DOMAIN>` with a camelCased value in the matching tag class; the
   class carries the shared component tags plus this tag (no separate subtype tag). `@Feature`
@@ -146,51 +143,33 @@ of the feature domain.
    overload rather than imposing a fresh layout.**
 5. **Search for existing Flows** (`core/gateway/flows/`) — what multi-step orchestration
    is available (e.g. create-and-activate patterns)?
-6. **Search for existing tests** (`core/backoffice/<domain>/`) — what test structure is
+6. **Search for existing tests** (`core/<service>/<domain>/`) — what test structure is
    already established for this feature? What base class is used? What tags?
 
 ### Project structure (canonical CORE feature layout)
 
-Mirror the current `brandingcampaigns` layout when adding a new CORE BackOffice feature:
+Template for a new CORE feature (BackOffice uses `backoffice` as `<service>`; the flows
+package keeps its historical `backOffice` casing). Concrete example tree:
+[reference.md](reference.md#project-structure-examples).
 
 ```
 api/src/main/java/live/winfinity/at/
-├── core/enums/<domain>/                       # feature enums (CAPS + @JsonValue value)
-│   └── BrandingCampaignStatus, BrandingCampaignType, GenericAssetsKeys
-├── core/dto/backoffice/                       # raw-id response wrappers (StringResponse)
-│   └── BrandingCampaignIdResponseWrapper
-├── core/gateway/pojo/backoffice/<domain>/     # POJOs split by operation
+├── core/enums/<domain>/                         # <Entity>Status, <Entity>Type, <Payload>Keys (CAPS + @JsonValue)
+├── core/dto/<service>/                          # <Entity>IdResponseWrapper (StringResponse)
+├── core/gateway/pojo/<service>/<domain>/        # POJOs split by operation
 │   ├── create/
-│   │   ├── CreateBrandingCampaignRequest       # record + @Builder + static factories
-│   │   └── nested/                             # shared nested DTOs (BrandingCampaignTable, SiteInfo, ...)
+│   │   ├── Create<Entity>Request                # record + @Builder + static factories
+│   │   └── nested/                              # shared nested DTOs
 │   ├── get/
-│   │   ├── BrandingCampaignResponse            # record + implements *Assertions + getSelf()
-│   │   └── assertions/BrandingCampaignAssertions  # interface extends ObjectAssertions<T>
-│   └── harddelete/HardDeleteBrandingCampaignRequest
-├── core/gateway/steps/backoffice/<domain>/    # @Component steps → RestResponse
-│   └── BrandingCampaignsV5Steps                # create/get/hardDelete + keepCreatedX cleanup
-├── core/gateway/flows/backOffice/<domain>/    # @Component flows → domain values (create+get orchestration)
-│   └── BrandingCampaignsFlows                  # createAndGetGenericCampaign(...) + private createAndGetCampaign(request)
-api/src/test/java/live/winfinity/at/core/backoffice/<domain>/
-└── CreateGenericBrandingCampaignsTests         # @Feature("API | BackOffice | v5 | ...")
-```
-
-For non-BackOffice services (e.g. PlayerStats), the layout mirrors the pattern with the
-service path instead of `backoffice`:
-
-```
-api/src/main/java/live/winfinity/at/
-├── core/gateway/pojo/<service>/<domain>/                   # response DTOs
-│   ├── RecentlyPlayedResponse                               # record + implements *Assertions + getSelf()
-│   └── assertions/RecentlyPlayedResponseAssertions          # interface extends ObjectAssertions<T>
-├── core/gateway/steps/<service>/<version>/                  # versioned @Component steps
-│   └── PlayerStatsV6Steps
-├── core/gateway/flows/<service>/<version>/                  # versioned @Component flows
-│   └── PlayerStatsV6Flows
-├── core/params/<service>/<domain>/                          # QueryParamsConverter for GET endpoints
-│   └── RecentlyPlayedParams
-api/src/test/java/live/winfinity/at/core/<service>/<domain>/
-└── RecentlyPlayedTests                                      # @Feature("API | PlayerStats | v6 | Recently played")
+│   │   ├── <Entity>Response                     # record + implements <Entity>Assertions + getSelf()
+│   │   └── assertions/<Entity>Assertions        # interface extends ObjectAssertions<T>
+│   ├── update/Update<Entity>Request
+│   └── harddelete/HardDelete<Entity>Request
+├── core/gateway/steps/<service>/<domain>/       # <Entity>s[V<N>]Steps → RestResponse, keepCreated<Entity> cleanup
+├── core/gateway/flows/<service>/<domain>/       # <Entity>sFlows → domain values (createAndGet<Type><Entity> + private createAndGet<Entity>)
+├── core/params/<service>/<domain>/              # <Query>Params (QueryParamsConverter) for GET endpoints
+api/src/test/java/live/winfinity/at/core/<service>/<domain>/[<operation>/]
+└── <Operation><Type><Entity>sTests              # @Feature("API | <Service> | <version> | <Feature>")
 ```
 
 ### Versioned Steps and Flows
@@ -199,68 +178,63 @@ When a new API version is introduced (e.g. v6), create **versioned** Steps and F
 under a version subfolder — do not add methods to the existing unversioned class:
 
 - Steps: `core/gateway/steps/<service>/<version>/<Service><Version>Steps.java`
-  (e.g. `steps/playerstats/v6/PlayerStatsV6Steps.java`)
 - Flows: `core/gateway/flows/<service>/<version>/<Service><Version>Flows.java`
-  (e.g. `flows/playerstats/v6/PlayerStatsV6Flows.java`)
 
-This mirrors the reviewer-approved pattern from MR 6205. The version subfolder avoids
+Reviewer-approved pattern. The version subfolder avoids
 bean-name collisions and keeps each API version's infrastructure isolated.
 
-**When two versions of the same endpoint coexist (reviewer rules, MR 6262):**
+**When two versions of the same endpoint coexist (reviewer rules):**
 
 - **One Steps class per version** — split `v1` and `v2` into separate classes/packages
-  (`steps/replays/v1/ReplaysV1Steps`, `steps/replays/v2/ReplaysV2Steps`). Do NOT keep both
+  (`steps/<service>/v1/<Service>V1Steps`, `steps/<service>/v2/<Service>V2Steps`). Do NOT keep both
   versions in one class with per-method `version` parameters or `*V2` method-name suffixes —
   the reviewer rejects both.
 - **Version lives in `BASE_PATH`**, not as a method argument:
-  `private static final String BASE_PATH = "/replays/api/v1";` (and `.../v2` in the v2 class).
-  Truly unversioned endpoints keep their own path constant (e.g. `/replays/api` for `getReplay`).
+  `private static final String BASE_PATH = "/<service>/api/v1";` (and `.../v2` in the v2 class).
+  Truly unversioned endpoints keep their own path constant.
 - **Tests are versioned by package, not by class name** — put v1 tests under
   `core/<service>/<domain>/v1/` and v2 tests under `.../v2/`. The test class name carries NO
-  version token: `replays/v2/ReplaysPreviewImageTests` (NOT `ReplaysV2PreviewImageTests`).
-- **`@Feature` uses lowercase version**: `@Feature("API | Replays | v2 | Preview image")`
+  version token: `<domain>/v2/<Feature>Tests` (NOT `<Service>V2<Feature>Tests`).
+- **`@Feature` uses lowercase version**: `@Feature("API | <Service> | v2 | <Feature>")`
   (lowercase `v1`/`v2`, not `V1`/`V2`).
-- A v2 test that still needs a shared read-only step (e.g. `search`, `getReplay`) autowires
+- A v2 test that still needs a shared read-only step autowires
   the v1 Steps class separately for that call — the common read endpoint stays in the v1 class.
 - **MR title** — when an automation ticket exists for the test work, use it in the MR name
-  (reviewer asks for the automation task, e.g. CORE-4125, not just the feature ticket).
+  (reviewer asks for the automation task, not just the feature ticket).
 
-Key conventions (from the merged MR):
+Key conventions (from merged MRs):
 
-- **Create+get orchestration goes to a flow** — `BrandingCampaignsFlows.createAndGetGenericCampaign(...)`
-  wraps create→201→unwrap→get→200; the shared create→unwrap→get body lives in a **private
-  `createAndGetCampaign(request)` helper on the same flow** (not in the test).
-- **Tests call the flow**; `verifyGenericCampaign(...)` lives on the response
+- **Create+get orchestration goes to a flow** — public `createAndGet<Type><Entity>(...)` wraps
+  create→201→unwrap→get→200; the shared body lives in a **private `createAndGet<Entity>(request)`
+  helper on the same flow** (not in the test).
+- **Tests call the flow**; `verify<Type><Entity>(...)` lives on the response
   (assertions interface), not on the flow.
 - Request/response POJOs live under operation-scoped folders (`create/` for the request +
   `create/nested/`, `get/` for the GET response, delete payloads under `harddelete/`).
   This `create/`+`get/` split is the canon for a **new** domain, not a requirement to
   restructure an existing one — other domains keep Response+assertions in their root or in
-  an operation-named folder (`gettable/assertions/`, `getsiteresponse/assertions/`).
-- **Nested DTOs live once under `create/nested/` and are shared** — the GET response
-  (`get/BrandingCampaignResponse`) imports `BrandingCampaignTable`, `SiteInfo` and
-  `PartnerInfo` from `create.nested` rather than redeclaring them.
-- Enums and key constants (asset keys) live under `core/enums/<domain>/`.
-- **Dynamic API-provided configuration** (Dedicated Branding case): when valid request keys come
-  from an API response rather than a fixed enum, extend the response DTO first (`Game` →
-  `DedicatedBrandingAsset` / `DedicatedBrandingSetting`) and build payload maps from that data;
-  do not hardcode environment-dependent key lists in tests.
+  an operation-named folder (`get<entity>/assertions/`).
+- **Nested DTOs live once under `create/nested/` and are shared** — the GET response imports
+  them from `create.nested` rather than redeclaring them.
+- Enums and key constants live under `core/enums/<domain>/`.
+- **Dynamic API-provided configuration**: when valid request keys come from an API response
+  rather than a fixed enum, extend the response DTO first (`<Config>` → nested `<ConfigItem>`)
+  and build payload maps from that data; do not hardcode environment-dependent key lists in
+  tests. Example: [reference.md](reference.md#api-driven-payload-configuration).
 
 ### Phase C — Build infrastructure (bottom-up: POJOs → Steps → Test)
 
 Create in dependency order — compile after each layer, not only at the end.
 
 7. **POJOs first** — create enums, request DTOs, response DTOs, and any nested objects.
-    - Enums: constants are **CAPS** (`DRAFT`, `ACTIVE`, `ABORTED`); if the backend serializes
-      by value, add a `value` field + `@JsonValue` (e.g. `DRAFT("Draft")`) and a `@Getter`
-      — mirror `core.enums.topwins.OrderBy`. Never name constants like the serialized value
-      (`Draft`, `Active`).
-    - **Package layout for a feature:** keep domain enums under
-      `live.winfinity.at.core.enums.<domain>` (e.g. `core/enums/brandingcampaigns/`); split
-      request/response POJOs by operation into `pojo/backoffice/<domain>/create/`,
-      `.../<domain>/create/nested/`, `.../<domain>/get/` (response + `<domain>/get/assertions/`),
-      `.../<domain>/harddelete/`, …; the raw-id response wrapper (a `StringResponse` subclass)
-      lives under `core/dto/backoffice/`.
+    - Enums: constants are **CAPS** (`<CONSTANT>`); if the backend serializes by value, add a
+      `value` field + `@JsonValue` (`<CONSTANT>("<Value>")`) and a `@Getter` — mirror an
+      existing serialized enum in `core/enums/`. Never name constants like the serialized value.
+      Example: [reference.md](reference.md#enum-constants).
+    - **Package layout for a feature:** domain enums under `core/enums/<domain>/`;
+      request/response POJOs by operation into `pojo/<service>/<domain>/create/`,
+      `.../create/nested/`, `.../get/` (response + `get/assertions/`), `.../harddelete/`, …;
+      the raw-id response wrapper (a `StringResponse` subclass) under `core/dto/<service>/`.
     - Requests: use `record` with `@Builder` (Lombok). Prefer existing patterns in the
       codebase.
     - Responses: use `record`. Match field names and structure to the backend response
@@ -268,11 +242,10 @@ Create in dependency order — compile after each layer, not only at the end.
     - Nested records for arrays of objects in the response — put them in the `nested/`
       sub-package.
     - **Assertions for a response:** create an interface
-      `*Assertions extends ObjectAssertions<TheResponse>` next to the response
-      (e.g. `.../get/assertions/BrandingCampaignAssertions`), with `default` verify
-      methods that pull `getSelf()`; the response record `implements` it and returns `this`
-      from `getSelf()`. Call verifies on the response instance, e.g.
-      `brandingCampaign.verifyGenericCampaign(...)`.
+      `<Entity>Assertions extends ObjectAssertions<<Entity>Response>` next to the response
+      (`.../get/assertions/`), with `default` verify methods that pull `getSelf()`; the response
+      record `implements` it and returns `this` from `getSelf()`. Call verifies on the response
+      instance: `<entity>.verify<Type><Entity>(...)`.
 8. **Steps second** — create a `@Component` step class with methods for each endpoint.
     - Steps call APIs directly and return `RestResponse`; flows/factories orchestrate multiple
       steps and return domain objects.
@@ -290,42 +263,39 @@ Create in dependency order — compile after each layer, not only at the end.
       `HttpRequest.builder()`. See [reference.md](reference.md#queryparamsconverter-pattern).
     - If an endpoint takes a body on DELETE (e.g. batch-delete with a list of IDs), create
       a small request DTO for that body — do NOT use query params.
-    - **Create steps return the raw-id wrapper** (`RestResponse<XxxIdResponseWrapper, String>`
+    - **Create steps return the raw-id wrapper** (`RestResponse<<Entity>IdResponseWrapper, String>`
       via `sendRequestAndWrapString(...)`), see
       [reference.md](reference.md#stringresponse-id-wrapper).
     - **Bean-name collisions:** Spring names beans from the simple class name, so a new
       `@Component` must not duplicate any existing class name in the repo — even in
       another package. Before creating, run `find api/src -name "<Name>.java"`; on
-      collision (e.g. `BrandingCampaignsSteps` vs existing
-      `backoffice.tables.steps.BrandingCampaignsSteps`) disambiguate with a version
-      suffix (`BrandingCampaignsV5Steps`). POJO records/enums are not beans and do not
-      collide.
+      collision disambiguate with a version suffix (`<Entity>sSteps` → `<Entity>sV<N>Steps`).
+      POJO records/enums are not beans and do not collide.
+      Example: [reference.md](reference.md#bean-name-collision-check).
 
 ### Phase D — Write the test class
 
 9. **Placement** — package under `core/{service}/<domain>/`, where `{service}` is the
-   service name from the task or GitLab (e.g. `core/backoffice/<domain>/`). Class name
-   ends with `Tests`.
+   service name from the task or GitLab; an operation subfolder (`create/`, `update/`) when
+   the domain already uses one. Class name ends with `Tests`.
 10. **Class-level annotations** — `@Tags` (component area tags), `@AllureComponentCore`,
     `@Feature("API | {Service} | {version} | {Feature}")` — include the API version when
-    the Steps/Flows are versioned. Examples:
-    `@Feature("API | BackOffice | v5 | Branding campaigns")`,
-    `@Feature("API | PlayerStats | v6 | Recently played")`.
+    the Steps/Flows are versioned; deeper levels add `| <Type> <entity> | <Operation> | <State>`
+    when the domain splits classes that way.
 11. **Extend `BaseApiTest`** — provides Spring context, cleanup, and the `api` JUnit tag
     via `@AllureLayerApi`.
-12. **Inject dependencies** — `@LazyAutowired` (never `@Autowired`), `@Value` for
-    properties like `${backoffice.test-folder-id}`.
+12. **Inject dependencies** — `@LazyAutowired` (never `@Autowired`), `@Value("${<property>}")`
+    for configured ids (folders, static sites).
 13. **Constants and helpers** — extract repeated data (e.g. required payload maps for
     validation) to `static final` fields. Request construction goes to **static factories
     on the request POJO** (see [Where to put extracted code](#where-to-put-extracted-code));
     class-local orchestration goes to private helpers.
     - **Test data is random, never hardcoded** — see [Random test data](#random-test-data).
     - **Per-test random state goes to `@BeforeEach`**, not to `final` instance fields —
-      declare the field, initialize it in `setUp()` (mirror `CreateGenericBrandingCampaignsTests`:
-      `gameType`, `brandingCampaignName`). Keeps each test fresh under `PER_METHOD`.
-    - **Constants are first in the class** — `private static final ...` fields go before
-      injected fields. Review feedback specifically expects core class constants such as
-      `GAME_TYPE` at the top of the class body.
+      declare the field, initialize it in `setUp()` (e.g. a random game type, a random entity
+      name). Keeps each test fresh under `PER_METHOD`.
+    - **Constants are first in the class** — `private static final ...` fields (e.g. a fixed
+      `GAME_TYPE`) go before injected fields (review feedback).
 14. **State** — use `List<String>` for IDs that need manual cleanup. Instance fields for
     the entities created in `@BeforeEach` (if applicable).
 15. **Cleanup** — `@AfterEach` method: call the batch-delete step for the accumulated
@@ -335,35 +305,32 @@ Create in dependency order — compile after each layer, not only at the end.
 16. **Each test method** — follow the strict annotation order
     ([reference.md](reference.md#test-method-annotation-order)).
 17. **Test method body** — follow the step-by-step orchestration the user described:
-    - **No step-narration comments** — do NOT write `// 1. Create site`, `// 2. Create
-      table`, `// 6. Get site tables...` etc. The user explicitly rejects them. Group
-      logical blocks with a blank line instead (package convention). If a reason is
-      genuinely non-obvious (e.g. campaign ordering matters), prefer `@DisplayName` over a
+    - **No step-narration comments** — do NOT write `// 1. Create <x>`, `// 2. Get <y>` etc.
+      The user explicitly rejects them. Group logical blocks with a blank line instead
+      (package convention). If a reason is genuinely non-obvious, prefer `@DisplayName` over a
       comment.
-    - **Explicit types, not `var`** — e.g. `GameType gameType = RandomUtils.randomGameType();`.
+    - **Explicit types, not `var`** — `<Type> <name> = ...;`.
       The package does not use `var` for test data declarations.
     - **Reference types, not primitives** — all variables and parameters use wrapper/reference
       types (`Integer`, `Long`, `Boolean`, `Double`, …), never primitives (`int`, `long`,
       `boolean`, `double`, …). Applies to local variables, method/constructor parameters, and
-      fields across tests, Steps, Flows, and POJOs — e.g. `Integer length = ...`,
-      `private Long tableId;`, `void verifyStatus(Boolean isActive)`.
+      fields across tests, Steps, Flows, and POJOs — `Integer`, not `int`; `Boolean`, not
+      `boolean`.
     - **Do not add a private helper for a single existing flow call.** If a prerequisite can be
       created by an existing flow with all required arguments, call it directly at the usage site
-      (e.g. `coreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId, gameType,
-      Category.BANKER_GAMES)`) instead of wrapping it in a local helper.
+      instead of wrapping it in a local helper.
     - **Multiline `.formatted(...)` strings need parentheses around the whole concatenation** —
       otherwise Java applies `.formatted()` only to the last string literal. See
       [reference.md](reference.md#multiline-formatted-strings).
-    - **Status codes** — activate/update (`updateStatus`) returns **204**, reads (GET)
+    - **Status codes** — status transitions/updates usually return **204**, reads (GET)
       return **200**. Confirm from an existing test in the same package before asserting.
     - **STOP before writing — ask the user about site/table strategy:**
-      > "For site and table prerequisites — use **static** (from `core.static-site-id` +
-      > `CoreStaticTables.getStaticTableIdByGameType`) or **create new ones** via
-      > `backofficeSiteSteps.createSite` + `coreTableFlows.createTable`?"
-        - **Static** → requires `@Value("${core.static-site-id}")` and `CoreStaticTables`
-          autowiring. No cleanup needed (always exist). Preferred for simple tests.
-        - **Create new** → requires site/table flows (`BackofficeSiteSteps`,
-          `CoreTableFlows`). Auto-cleanup via framework. Needed when the test
+      > "For site and table prerequisites — use **static** (configured static site id + the
+      > static-tables bean by game type) or **create new ones** via the site/table flows?"
+        - **Static** → `@Value` of the static site property + the static-tables bean. No
+          cleanup needed (always exist). Preferred for simple tests.
+        - **Create new** → existing site/table steps & flows. Auto-cleanup via framework.
+          Needed when the test
           must control table properties (gameType, etc.) or needs multiple distinct
           sites/tables beyond what static config provides.
         - **Configured partner site + fresh table** — site id from the partner properties
@@ -372,15 +339,13 @@ Create in dependency order — compile after each layer, not only at the end.
           site+table relation flow when the scenario needs a second site.
         - **Do not guess** — wait for the user's answer before writing.
     - **Session-based tests** — when the test needs a player session (game rounds, Kafka
-      messages, player stats), use `corePlayerFlows.startSession(gameType)` which auto-selects
-      a static table for the given game type. This is lighter than creating site+table
-      infrastructure. The returned `Session` contains `tableId()`, `internalUserId()`,
-      `user()`, `currency()`, `gameType()`.
-    - Create prerequisite entities (site, table, etc.) using existing flows/steps.
-      For Dedicated Branding campaigns, create fresh site/table relations with
-      `CoreSiteTableRelationFlows.createSiteWithActiveTable(testFolderId, gameType,
-      Category.BANKER_GAMES)`; static tables do not cover all required game/category
-      combinations and may make negative tests fail during setup instead of exercising the API.
+      messages, player stats), start one through the existing player flow — it auto-selects a
+      static table for the game type and is lighter than creating site+table infrastructure.
+      Example: [reference.md](reference.md#session-based-tests-kafka--game-rounds).
+    - Create prerequisite entities (site, table, etc.) using existing flows/steps. When the
+      entity requires a specific table attribute (e.g. lobby category) that static tables do
+      not cover, create a fresh site/table relation with that attribute — otherwise negative
+      tests fail during setup instead of exercising the API.
     - Perform the action under test.
     - Assert the response (status code, body fields).
     - Verify by reading back (GET the created entity and assert all relevant fields).
@@ -393,25 +358,25 @@ Create in dependency order — compile after each layer, not only at the end.
         (e.g. a zero-bet round must NOT appear, and we need to wait long enough to be sure
         the message was consumed). See [reference.md](reference.md#awaitility-patterns).
       Avoid `Predicate`, `AtomicReference`, and complex helper state — keep the `until()`
-      lambda inline and simple (review feedback MR 6205).
+      lambda inline and simple (review feedback).
     - **Kafka-message-based tests** — when the action-under-test is sending Kafka messages
-      (via `CoreStatisticFlows`, `CoreRngStatisticFlows`, etc.) rather than calling REST
-      endpoints, extract message-sending logic into **private helpers on the test class**
-      (e.g. `sendRngCancelWithPositiveBet(session)`, `sendSglmFinishWithPositiveBet(session)`).
-      Keep each helper focused on one message type; SGLM rounds require a `sendStartMessage()`
-      before `sendFinishMessage()`/`sendCancelMessage()` (the game loop is Start→Finish/Cancel).
+      through the statistic flows rather than calling REST endpoints, extract message-sending
+      logic into **private helpers on the test class** — `send<GameKind><Message>With<Condition>(session)`.
+      Keep each helper focused on one message type; live-game rounds require a start message
+      before finish/cancel (the game loop is Start→Finish/Cancel).
     - Use `Assertions.assertThat(...).as("fieldName")` on each assertion in test classes;
       import `org.assertj.core.api.Assertions` — do not static-import `assertThat`. Same in
       Flows (`Assertions.assertThat(...)`, no static import).
     - **Chain instead of intermediate variables** — for a "create + verify" sequence call
       `flow.createAndGetXxx(...).verifyXxx(...)` in a chain, do not store the response in a
       local variable just to verify it. Same for wait→verify chains:
-      `flow.waitXxxContains(playerId, tableIds).verifyTableIdsContains(tableId)`. Domain-specific
+      `flow.waitXxxContains(...).verifyXxxContains(...)`. Domain-specific
       checks go to separate `default` verify methods in `*Assertions`, then chain them.
     - **Method chain formatting** — align continuation methods under the object they chain on.
       When the call starts with a flow/step field, break after the field and indent methods:
-      `playerStatsV6Flows\n        .waitRecentlyPlayedContains(...)`. For return chains in
-      Steps/Flows: `return playerStatsSteps.recentlyPlayed(...)\n                       .statusCodeIs200()\n                       .body()\n                       .tableIds();` (review feedback MR 6205).
+      `<x>Flows\n        .waitXxx(...)`. For return chains in Steps/Flows:
+      `return <x>Steps.<call>(...)\n                    .statusCodeIs200()\n                    .body()\n                    .<field>();`
+      (review feedback).
     - **More than 2 assertions in a row → always `SoftAssertions`** (repo style); in test
       classes 1–2 stay `Assertions.assertThat`. Soften-assertion and structural-precondition
       rules with code samples — [reference.md](reference.md#softassertions-pattern). Key points: assert
@@ -424,8 +389,7 @@ Create in dependency order — compile after each layer, not only at the end.
 When the task includes **negative / validation** cases, put them in a **separate
 `*ValidationTests` class** by default — do NOT mix them into the positive CRUD class. If you are
 extending an existing reviewed class/package that already intentionally keeps positives and
-validation together (e.g. MR 6094 Dedicated Branding), preserve that local style instead of
-splitting without request.
+validation together, preserve that local style instead of splitting without request.
 
 > **Parameterized positive cases (`@TestTemplate`)** — when several positive cases differ
 > only by one boundary value, merge them into a single `@TestTemplate` + `ContextProvider`.
@@ -437,17 +401,16 @@ splitting without request.
 
 Rules for a validation test class:
 
-- **Static prerequisites only** — do **not** create a site/table in `@BeforeEach`. Site via
-  `@Value("${core.static-site-id}")`, table via the `CoreStaticTables` bean
-  (`getStaticTableIdByGameType(...)`, keys listed in [Tips](#tips)). **No cleanup needed** —
+- **Static prerequisites only** — do **not** create a site/table in `@BeforeEach`. Static
+  site via `@Value`, table via the static-tables bean (see [Tips](#tips)). **No cleanup needed** —
   the request is rejected before any resource is created.
 - **Shared request defaults** — keep a `static final` map of the valid payload and a reusable
   base name; each test overrides only the field it targets.
 - **Valid-request factory** — when negative tests rebuild the same valid request, add a
   `validXxxBuilder(...)` factory to the request POJO; each test then overrides just one field.
   Do NOT merge the scenarios — only share the builder. Type-specific builders bake the type
-  contract (Physical omits `siteIds`, BlueScreen always carries `streamId`) — give each type
-  its own factory. Code:
+  contract (a type without sites omits `siteIds`, a type that needs a nested attribute always
+  sets it) — give each type its own factory. Code:
   [reference.md](reference.md#valid-request-factory-for-negative-tests).
 - **Each test targets one validation rule.** Assert the error body too
   (`String error = ...` → `.verifyErrorBody(error)`) when the message is deterministic; a few
@@ -457,11 +420,10 @@ Rules for a validation test class:
   `String error = "... %s.".formatted(value)` immediately above the stream and use
   `.orElseThrow(() -> new QaWinfinityException(error))`.
 - **Isolate the targeted rule** — build the request so ONLY the rule under test is violated
-  (e.g. count-rule test uses two **distinct active** tables, never one reused static id; a
-  nested required field like `streamId` must not be left null, else the duplicate/NotEmpty
-  rule fires first).
-- **"Without table -> 400" sends ONE table with a null `tableId`** — `validXxxBuilder(null, ...)`.
-  Do NOT switch to an empty `tables` list unless a live run proves the count rule fires first.
+  (e.g. a count-rule test uses two **distinct active** items, never one reused static id; a
+  nested required field must not be left null, else the duplicate/NotEmpty rule fires first).
+- **"Without <item> -> 400" sends ONE item with a null id** — `validXxxBuilder(null, ...)`.
+  Do NOT switch to an empty list unless a live run proves the count rule fires first.
 - **Error body always goes to a local variable first** — assign it to `String error = "..."`
   **before** the call; never inline the literal in the chain.
   If the method already has another setup error variable, name the assertion message
@@ -547,7 +509,7 @@ Used when the user asks to refactor / remove duplication in existing test classe
 1. **One class at a time** — the user picks the class; do not touch other test classes in
    the same pass. Report cross-class duplication you noticed as a follow-up suggestion.
 2. **Analyse first** — list the duplicated blocks inside the class, then grep the package
-   (`grep -c` over `core/backoffice/<domain>/*.java`) to see whether the same code is
+   (`grep -c` over `core/<service>/<domain>/*.java`) to see whether the same code is
    copy-pasted across classes. Repo-wide duplication → extract to `api/src/main`
    (factories/flows); class-only duplication → private helper in the test class.
 3. **Reuse before creating** — search `flows/` and `pojo/` for an existing method first;
@@ -555,8 +517,8 @@ Used when the user asks to refactor / remove duplication in existing test classe
    assertions for the operation already exists (in its root or an operation folder), reuse
    or extend it — do not rebuild the `create/`+`get/` layout over it.
 4. **Preserve test semantics** — don't change what the test verifies. Example: a test that
-   activates two tables in one batch (`activateTablesOnSite`) must stay batched, even if
-   `createActivatedTable` ×2 would look shorter. Call out any semantic change explicitly.
+   activates two items in one batch call must stay batched, even if two single-item calls
+   would look shorter. Call out any semantic change explicitly.
 5. **Near-identical tests** (e.g. BVA pair differing only by one value) → collapse bodies
    into one `createAndVerify...(value)` helper, keeping separate `@Test` methods with their
    own Allure IDs. Converting to `@TestTemplate` + `ContextProvider` only on request — and
@@ -566,69 +528,61 @@ Used when the user asks to refactor / remove duplication in existing test classe
 
 ### Where to put extracted code
 
-| What is duplicated                          | Where it goes                                                                                                              | Example                                                                                                                                                   |
-|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Request building (builder chains)           | `public static` factory on the request record/class in `pojo/`                                                             | `CreateBrandingCampaignRequest.generic(name, siteIds, tables)`, `BrandingCampaignTable.of(tableId[, brandedTableName])`, cf. `CreateTableRequest.of(...)` |
-| Default payload constants used by factories | `public static final` on the request POJO                                                                                  | `GenericAssets.GENERIC_ASSET_KEYS`                                                                                                                        |
-| "call step → assert status → unwrap body"   | private helper **on the domain flow** when shared across tests; private helper in the test only for one-off orchestration  | `BrandingCampaignsFlows.createAndGetCampaign(request)` → create 201 → `body().campaignId()` → get 200; public wrapper `createAndGetGenericCampaign(...)`  |
-| Verify a response                           | `*Assertions` interface next to the response (default method on `getSelf()`)                                               | `brandingCampaign.verifyGenericCampaign(name, siteIds, tables, assets)`                                                                                   |
-| Same verify for different entity states     | public `verify<State><Type><Entity>` wrappers → **private** interface method `verify<Type><Entity>(..., status)`           | `verify<State>Xxx(...)` → `verifyXxx(..., <Status>.<STATE>)`                                                                                              |
-| Create entity in a non-initial state        | public flow method + shared private helper on the flow                                                                     | `create<Transition>AndGet<Type><Entity>(...)` → private `create<Transition>AndGet<Entity>(request)`                                                       |
-| Site + activated table                      | existing `CoreSiteTableRelationFlows.createSiteWithActiveTable(folderId, gameType)` → `SiteTableRelation(siteId, tableId)` |                                                                                                                                                           |
-| Table + activation on a site                | existing `CoreTableFlows.createActivatedTable(gameType, siteId)`                                                           |                                                                                                                                                           |
-| Random names / values                       | `common/.../utils/random/RandomUtils` + prefix in `common/.../constants/PrePostfixes`                                      | see below                                                                                                                                                 |
-| Test-specific create+verify                 | private helper in the test class                                                                                           | `createAndGetCampaign(request)`, `createAndVerify...(value)`                                                                                              |
-| Kafka message-sending scenarios             | private helpers in the test class (one per message type)                                                                   | `sendRngCancelWithPositiveBet(session)`, `sendSglmFinishWithPositiveBet(session)`                                                                         |
-| Awaitility wait logic                       | public method **on the domain flow** (`waitXxxContains(...)`, `waitXxxDoesNotContain(...)`)                                | `PlayerStatsV6Flows.waitRecentlyPlayedContains(playerId, tableIds)` — see [reference.md](reference.md#awaitility-patterns)                                |
+| What is duplicated                          | Where it goes                                                                                         | Template                                                                                       |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
+| Request building (builder chains)           | `public static` factory on the request record/class in `pojo/`                                        | `Create<Entity>Request.<type>(...)`, `<Nested>.of(id[, attr])`                                 |
+| Default payload constants used by factories | `public static final` on the request POJO                                                             | `<Payload>.<PAYLOAD>_KEYS`                                                                     |
+| "call step → assert status → unwrap body"   | private helper **on the domain flow** when shared; private helper in the test only for one-offs      | public `createAndGet<Type><Entity>(...)` → private `createAndGet<Entity>(request)`             |
+| Verify a response                           | `<Entity>Assertions` interface next to the response (default method on `getSelf()`)                   | `<entity>.verify<Type><Entity>(...)`                                                           |
+| Same verify for different entity states     | public `verify<State><Type><Entity>` wrappers → **private** interface method `verify<Type><Entity>(..., status)` | `verify<State>Xxx(...)` → `verifyXxx(..., <Status>.<STATE>)`                         |
+| Create entity in a non-initial state        | public flow method + shared private helper on the flow                                                | `create<Transition>AndGet<Type><Entity>(...)` → private `create<Transition>AndGet<Entity>(request)` |
+| Site + activated table / table on a site    | existing site/table flows (search `core/gateway/flows/` before writing)                              |                                                                                                |
+| Random names / values                       | `RandomUtils` + prefix in `PrePostfixes`                                                              | `RandomUtils.random<Entity>Name()`                                                             |
+| Test-specific create+verify                 | private helper in the test class                                                                      | `createAndVerify<Entity>With<Value>(value)`                                                    |
+| Kafka message-sending scenarios             | private helpers in the test class (one per message type)                                              | `send<GameKind><Message>With<Condition>(session)`                                              |
+| Awaitility wait logic                       | public method **on the domain flow**                                                                  | `wait<Thing>Contains(...)`, `wait<Thing>DoesNotContain(...)`                                   |
+
+Concrete examples per row: [reference.md](reference.md).
 
 - Flows are for shared multi-step orchestration; a create→unwrap→get sequence **is** a valid
-  flow method when several tests use it (mirror `BrandingCampaignsFlows`): public
-  `createAndGetXxx(...)` wrapper + private `createAndGetCampaign(request)` body.
+  flow method when several tests use it: public `createAndGet<Type><Entity>(...)` wrapper +
+  private `createAndGet<Entity>(request)` body.
 - **Awaitility wait methods also belong in Flows** — they orchestrate step calls with polling
   logic and return the domain response. The test calls the flow and chains assertions.
 - Steps keep returning `RestResponse`; if a flow exists, it returns domain values.
 - Code comments in qa-tests-v2 are in **English** (repo style), 1–2 lines, explain "why".
-  **No step-narration comments** in test method bodies (`// 1. Create site`) — see Phase D →
+  **No step-narration comments** in test method bodies (`// 1. Create <x>`) — see Phase D →
   step 17: group logical blocks with blank lines instead, and prefer `@DisplayName`.
 
 ---
 
 ## Random test data
 
-- **Names/strings** — use a `RandomUtils.randomXxx()` generator. If none fits, add:
-    1. a prefix constant to `PrePostfixes` (`X_AT_<ENTITY>_` style), e.g.
-       `BRANDED_TABLE_NAME_PREFIX = "X_AT_BRANDED_TABLE_"`;
-    2. a generator in `RandomUtils`: `return PREFIX + RandomStringUtils.randomNumeric(10);`
-       (e.g. `randomBrandedTableName()`).
+- **Names/strings** — use a `RandomUtils.random<Thing>()` generator. If none fits, add:
+    1. a prefix constant to `PrePostfixes` (`<THING>_PREFIX = "X_AT_<THING>_"`);
+    2. a generator in `RandomUtils`: `return <THING>_PREFIX + RandomStringUtils.randomNumeric(10);`.
 
-    - Campaign names use the existing `RandomUtils.randomCampaignName()` (→ `CAMPAIGN_PREFIX`,
-      `X_AT_CAMPAIGN_`) — do not build `"Test X Campaign " + System.currentTimeMillis()`.
-    - Stream ids use the existing `RandomUtils.randomStreamId()`.
-    - Check the backend max length (e.g. campaign name ≤ 200, brandedTableName ≤ 40) — the
-      generated value must fit.
-    - Don't reuse an existing prefix that belongs to another domain (`BRANDING_PREFIX` —
-      `randomBranding()`, `BRANDING_CAMPAIGNS_PREFIX` — legacy GraphQL/v2 campaigns).
-    - Boundary values stay explicit (`"a"`, `RandomStringUtils.randomAlphabetic(40)`).
-- **GameType** — when the test doesn't depend on a specific game, don't hardcode
-  `GameType.BACCARAT`; use the generator
-  `RandomEnumUtils.randomValue(GameType.getLiveCasinoGameTypes())`.
+    - Reuse the existing generator for the entity — do not build
+      `"Test X " + System.currentTimeMillis()`.
+    - Check the backend max length — the generated value must fit.
+    - Don't reuse an existing prefix that belongs to another domain/legacy API.
+    - Boundary values stay explicit (`"a"`, `RandomStringUtils.randomAlphabetic(<N>)`).
+- **Enum-typed data (e.g. game type)** — when the test doesn't depend on a specific value,
+  don't hardcode one; use `RandomEnumUtils.randomValue(<Enum>.<subset>())`.
   `private static final` = one value per class/run; a plain instance field = new value per
   test (JUnit per-method lifecycle). **Preferred: declare the field and initialize it in
-  `@BeforeEach`** (mirror `CreateGenericBrandingCampaignsTests.setUp()`) so each test
-  exercises a fresh value.
-  When the test needs "any game except X", use
-  `RandomUtils.getRandomValueFromListExcluding(GameType.getLiveCasinoGameTypes(), X)` — do not
-  hand-write stream filters with `findFirst()`/`findAny()`.
-- **Asset/param key lists** — when a payload takes a fixed set of keys (e.g. generic
-  campaign assets `Loading/Desktop/Mobile`), model them as `static final List<String>`
-  on the POJO (e.g. `GenericAssets.GENERIC_ASSET_KEYS`), generate values with a
-  `random()` factory from those keys, and reuse the list in validation (e.g. building a
-  map missing one key) instead of hardcoding `Map.of(...)` in each test.
-- **API-driven key lists** — when keys come from `GET /games` (Dedicated Branding), model the
-  API fields on the `Game` DTO and add small value-object factories such as
-  `DedicatedBrandingAssets.of(game)` / `DedicatedBrandingSettings.of(game)`. Tests should call
-  these factories, not duplicate stream/map creation inline except when building expected
-  error text from the same live data.
+  `@BeforeEach`** so each test exercises a fresh value.
+  When the test needs "any value except X", use
+  `RandomUtils.getRandomValueFromListExcluding(<list>, X)` — do not hand-write stream filters
+  with `findFirst()`/`findAny()`.
+- **Fixed key lists** — when a payload takes a fixed set of keys, model them as an enum +
+  `static final List<String>` on the POJO, generate values with a `random()` factory from those
+  keys, and reuse the list in validation (e.g. a map missing one key) instead of hardcoding
+  `Map.of(...)` in each test. Example: [reference.md](reference.md#fixed-key-list-on-a-pojo).
+- **API-driven key lists** — when keys come from another API response, model those fields on
+  its DTO and add small value-object factories `<Payload>.of(<config>)`. Tests call these
+  factories, not duplicate stream/map creation inline except when building expected error text
+  from the same live data. Example: [reference.md](reference.md#api-driven-payload-configuration).
 
 ---
 
@@ -639,10 +593,11 @@ Used when the user asks to refactor / remove duplication in existing test classe
 - **Hook into cleanup:** make the Steps class `extends CleanUpHandler`, and in the create
   method call `register(id, this::delete)` after a success. Then the test needs **no**
   `@AfterEach`.
-- **Preferred style — `keepCreatedX(id)` helper** (mirror `BackofficeSiteSteps.keepCreatedSite`):
+- **Preferred style — `keepCreated<Entity>(id)` helper** (mirror an existing Steps class that
+  already has one):
   `create` registers the id on 201; the helper does `register(id, ...::hardDelete(...))`.
   **Assert the delete status inside the cleanup lambda** — otherwise a silent failure leaks the
-  entity. Example: [reference.md](reference.md#keepcreatedx-cleanup-helper).
+  entity. Example: [reference.md](reference.md#keepcreatedx-cleanup-helper-steps).
 - **String id from a raw response body:** the body is the raw HTTP string **including quotes**
   (`"abc123"`). Do NOT use `.replace("\"","")` or `ObjectMapper` — use the repo `StringResponse`
   wrapper (`sendRequestAndWrapString(...)` + a subclass stripping quotes via
@@ -651,7 +606,7 @@ Used when the user asks to refactor / remove duplication in existing test classe
 - **Batch delete with a body:** create a small request DTO and a `delete(List<id>)` step;
   register each id against `delete(List.of(id))`.
 - **Priority:** override `getPriority()` so the child is deleted before its parent (lower =
-  first). Reuse existing constants (`CORE_TABLE_PRIORITY`, `CORE_SITE_PRIORITY`, …).
+  first). Reuse existing `CORE_<ENTITY>_PRIORITY` constants.
 - **Sites/tables created via flows already register themselves** — do not manually delete them.
 
 ---
@@ -664,16 +619,14 @@ Used when the user asks to refactor / remove duplication in existing test classe
 - **Error-body text patterns** — always confirm on first real run. Use the existing tests
   in the same domain as reference for exact FluentValidation message formats. Default-guess
   patterns: [reference.md](reference.md#fluentvalidation-error-body-patterns).
-- **Dedicated Branding campaign tests** — use
-  [reference.md](reference.md#dedicated-branding-campaigns) for the reviewed MR 6094 patterns:
-  request factories, dynamic assets/settings, `Category.BANKER_GAMES` prerequisites, full GET
-  assertion shape, and validation message formats.
-- **Static tables are per-gameType** — `CoreStaticTables.getStaticTableIdByGameType(GameType.X)`
-  reads from `application-*.properties` (`core.static-table.<game>-table-id`).
-- **Static sites** — `@Value("${core.static-site-id}")` is available in every environment
-  (`application-*.properties`). There is also `core.mock-static-site-id` for a second site.
-  **Caveat:** some environments lack the static site/table properties — e.g.
-  `core.static-site-id` is NOT present in `application-certification.properties`. If a test
+- **Domain-specific worked examples** (request factories, API-driven payloads, full GET
+  assertion shape, exact validation messages) live in [reference.md](reference.md) — open the
+  section for the domain you are extending before writing.
+- **Static tables are per game type** — the static-tables bean reads
+  `core.static-table.<game>-table-id` from `application-*.properties`.
+- **Static sites** — `core.static-site-id` (and a second `core.mock-static-site-id`) in
+  `application-*.properties`. **Caveat:** some environments lack the static site/table
+  properties (e.g. certification). If a test
   depends on a static resource that does not exist on an env, drop `@Tag(CERTIFICATION)`
   from that test's env set rather than failing at context load.
 - **Cleanup is automatic** for entities created via factory flows — see
