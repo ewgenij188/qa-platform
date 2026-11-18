@@ -1,0 +1,6 @@
+name: analyze-testops-run
+owner: platform-ai
+version: "1.1.0"
+last_reviewed: "2026-11-10"
+tags: ["qa", "testops", "rest-api", "core", "autotests", "failure-analysis", "logs", "traces"]
+mcp_dependencies: []

@@ -1,0 +1,6 @@
+name: pipeline-watch
+owner: platform-ai
+version: "1.0.2"
+last_reviewed: "2026-10-08"
+tags: ["release", "deploy", "gitlab", "pipeline", "background"]
+mcp_dependencies: []

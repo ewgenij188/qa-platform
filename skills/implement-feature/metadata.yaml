@@ -1,0 +1,6 @@
+name: "implement-feature"
+owner: "platform-ai"
+version: "0.1.0"
+last_reviewed: "2026-05-28"
+tags: ["implementation", "gitlab", "build", "mr", "knowledge-map"]
+mcp_dependencies: ["atlassian"]

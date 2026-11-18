@@ -32,7 +32,7 @@ Use the latest `win-dev-core-*` name in paths below.
 }
 ```
 
-Prefer `search_documents` with the body above. For noise rows, omit tier-1 `must_not` so FP patterns are counted. For **new-pattern hunting**, apply heavy `must_not` (tier-1 + tier-2 + noise list).
+Use `search_documents` (direct OpenSearch MCP) or `opensearch_search_documents` (wnf-developer), whichever is configured, with the body above. For noise rows, omit tier-1 `must_not` so FP@ patterns are counted. For **new-pattern hunting**, apply heavy `must_not` (tier-1 + tier-2 + noise list).
 
 ## Spike discovery (window finder)
 
@@ -111,8 +111,7 @@ Hourly overview:
                 "currency",
                 "topwins",
                 "promo-balance-service",
-                "domains",
-                "replays"
+                "domains"
               ]
             }
           }
@@ -131,7 +130,15 @@ Quiet baseline: low `signal.doc_count`. Regression window: sustained elevated `s
 
 ```json
 { "wildcard": { "log.message.keyword": "*Unauthorized*" } },
-{ "wildcard": { "log.message.keyword": "*Failed to validate request*" } },
+{ "match_phrase": { "log.message": "Failed to validate" } },
+{ "match_phrase": { "log.message": "validation error" } },
+{ "match_phrase": { "log.message": "One or more validation errors" } },
+{ "match_phrase": { "log.message": "Request validation" } },
+{ "match_phrase": { "log.message": "is not valid" } },
+{ "match_phrase": { "log.message": "must not be empty" } },
+{ "match_phrase": { "log.message": "ISO 4217" } },
+{ "match_phrase": { "log.message": "RandomHeaderValue" } },
+{ "match_phrase": { "log.message": "failed with code:400" } },
 { "wildcard": { "log.message.keyword": "*Site with id*not found*" } },
 { "wildcard": { "log.message.keyword": "*siteId*not found*" } }
 ```
@@ -165,9 +172,7 @@ Quiet baseline: low `signal.doc_count`. Regression window: sustained elevated `s
 { "wildcard": { "log.message.keyword": "*Unknown integration id*" } },
 { "wildcard": { "log.message.keyword": "*RandomHeaderValue*" } },
 { "wildcard": { "log.message.keyword": "*Can not find site*" } },
-{ "wildcard": { "log.message.keyword": "*must be convertible to Mongo ObjectId*" } },
-{ "wildcard": { "log.message.keyword": "*User replay not found for gameId*" } },
-{ "wildcard": { "log.message.keyword": "*Failed to get expiration info by*" } }
+{ "wildcard": { "log.message.keyword": "*must be convertible to Mongo ObjectId*" } }
 ```
 
 ## Post-filter / noise wildcards (tier 2 — count in noise table)
@@ -189,22 +194,32 @@ Quiet baseline: low `signal.doc_count`. Regression window: sustained elevated `s
 | `*Table settings not found*` | folder table settings |
 | `*Table node settings not found*` | node settings |
 | `*Deleted folders*is present in node ancestors*` | folder tree noise |
-| `*User replay not found for gameId*` | QA/dev — replay crashed/dropped |
-| `*Failed to get expiration info by*` | QA/dev — video not recorded / test-generated |
 | `*Health check*` / `/health/startup` | deploy / liveness |
 
 ## Noise checklist (count both windows)
 
 ### backoffice
 
-- `*Deleted folders*is present in node ancestors*`
-- `*no table settings with specified id*`
-- `*Table * not found*`
-- `*Table node settings not found*`
-- `*Partner table settings for site*not found*`
-- `*no site with specified id*`
-- `*Some sites are not found*`
-- `*Requested sites not found*`
+Useless (skip from findings; still count in the noise table). `match_phrase`:
+
+- `is present in node ancestors`
+- `Settings for table`
+- `Site with id `
+- `There is no site with specified`
+- `There is no folder with specified id`
+- `Invalid currencies are requested`
+- `'From' header`
+- `Failed to validate`
+- `no table settings with specified`
+- `not found in table order`
+- `failed with code:400`
+- `failed with code:206`
+- request path `/backoffice/hardDeletePartnerNodes`
+- `Some sites are not found`
+- `Requested sites not found`
+- `Table settings not found`
+- `Table node settings not found`
+- `Partner table settings`
 
 ### partners
 
@@ -217,7 +232,6 @@ Quiet baseline: low `signal.doc_count`. Regression window: sustained elevated `s
 
 ### playerstats
 
-- `*Failed to validate request*`
 - `*Game snapshot not found*`
 - `*must be convertible to Mongo ObjectId*`
 
@@ -228,19 +242,48 @@ Quiet baseline: low `signal.doc_count`. Regression window: sustained elevated `s
 - `*CreateSession returned*`
 - `*Health check*`
 
-### replays
+## Per-service pass
 
-- `*User replay not found for gameId*` (QA/dev — replay crashed/dropped)
-- `*Failed to get expiration info by*` (QA/dev — video not recorded / test-generated)
+For each release service, query that service alone. Strip only that service’s useless `must_not`. Sample the remainder. Then count critical exceptions (never stripped): logs where `log.exception` is not null.
 
-## New-pattern verify
+```json
+{ "exists": { "field": "log.exception" } }
+```
 
-For each candidate message from after-window samples:
+Count every non-noise candidate in **after** and **before**. Keep the row when after > 0. `before > 0` stays in the table as Persisted or Critical. `new` only when before = 0.
 
-1. Build a stable `wildcard` or `match_phrase` (strip volatile IDs when needed).
-2. Count in **after** and **before** windows.
-3. Keep if **before = 0** and after > 0.
-4. If all hits fall in the first ~30m after deploy `D` and then stop → note **deploy burst**.
+If all hits fall in the first ~30m after deploy `D` and then stop → note **deploy burst**, and still list the row.
+
+## Backoffice useless `must_not`
+
+Apply only with `app.kubernetes.io/name` = `backoffice`. `match_phrase`, not a leading wildcard.
+
+```json
+{ "match_phrase": { "log.message": "is present in node ancestors" } },
+{ "match_phrase": { "log.message": "Settings for table" } },
+{ "match_phrase": { "log.message": "Site with id " } },
+{ "match_phrase": { "log.message": "There is no site with specified" } },
+{ "match_phrase": { "log.message": "There is no folder with specified id" } },
+{ "match_phrase": { "log.message": "Invalid currencies are requested" } },
+{ "match_phrase": { "log.message": "'From' header" } },
+{ "match_phrase": { "log.message": "Failed to validate" } },
+{ "match_phrase": { "log.message": "no table settings with specified" } },
+{ "match_phrase": { "log.message": "not found in table order" } },
+{ "match_phrase": { "log.message": "failed with code:400" } },
+{ "match_phrase": { "log.message": "failed with code:206" } },
+{ "term": { "log.requestPath.keyword": "/backoffice/hardDeletePartnerNodes" } },
+{ "match_phrase": { "log.message": "Some sites are not found" } },
+{ "match_phrase": { "log.message": "Requested sites not found" } },
+{ "match_phrase": { "log.message": "Table settings not found" } },
+{ "match_phrase": { "log.message": "Table node settings not found" } },
+{ "match_phrase": { "log.message": "Partner table settings" } }
+```
+
+Request validation above applies to every service. `failed with code:206` stays backoffice-only.
+
+Database errors are not request validation. Never strip a database error, and never strip a log where `log.exception` is not null.
+
+If a validation pattern has before = 0, mention it once in the verdict as new validation. Leave it out of the critical table.
 
 ## Slice example (timeouts)
 
@@ -258,5 +301,6 @@ Split long windows into 1h or 2h ranges and sum counts.
 | Business | Known business codes (601, 605, 606, 608, 702, …) |
 | QA | Suite fingerprints, RandomHeaderValue, empty required fields |
 | Deploy noise | Health/startup clustered at rollout |
-| Investigate | New non-noise pattern; possible regression |
-| Persisted | Present in both regression windows |
+| Critical | `log.exception` is not null, including every database error. Always listed, even when before > 0 |
+| Investigate | Other non-noise failure |
+| Persisted | Same non-noise pattern in the before window; still listed |

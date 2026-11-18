@@ -1,6 +1,7 @@
 name: analyze-release-logs
 owner: platform-ai
-version: "2.0.0"
-last_reviewed: "2026-07-27"
+version: "3.0.1"
+last_reviewed: "2026-10-13"
 tags: ["release", "opensearch", "logs", "regression"]
-mcp_dependencies: ["opensearch"]
+# OpenSearch and Grafana: a direct MCP or wnf-developer, whichever is configured.
+mcp_dependencies: []

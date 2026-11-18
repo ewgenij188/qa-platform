@@ -1,0 +1,6 @@
+name: add-site-setting
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-09-09"
+tags: ["backoffice", "partnersite", "avro", "mongodb", "kafka", "contracts"]
+mcp_dependencies: []

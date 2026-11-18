@@ -1,0 +1,7 @@
+name: answer-from-sources
+owner: platform-ai
+version: "0.1.4"
+last_reviewed: "2026-10-13"
+tags: ["knowledge-map", "confluence", "answer", "opensearch"]
+# OpenSearch and Grafana: a direct MCP or wnf-developer, whichever is configured.
+mcp_dependencies: ["atlassian"]

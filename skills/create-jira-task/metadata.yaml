@@ -1,0 +1,6 @@
+name: create-jira-task
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-10-22"
+tags: ["jira", "ticket", "knowledge-map"]
+mcp_dependencies: []

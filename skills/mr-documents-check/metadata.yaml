@@ -1,0 +1,6 @@
+name: "mr-documents-check"
+owner: "platform-ai"
+version: "0.1.0"
+last_reviewed: "2026-10-12"
+tags: ["knowledge-map", "confluence", "gitlab", "merge-request"]
+mcp_dependencies: ["atlassian"]

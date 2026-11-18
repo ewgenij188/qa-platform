@@ -1,0 +1,6 @@
+name: deploy-services
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-09-21"
+tags: ["release", "deploy", "gitlab", "migration", "pipeline"]
+mcp_dependencies: []

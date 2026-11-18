@@ -1,0 +1,6 @@
+name: create-testcases
+owner: platform-ai
+version: "1.0.0"
+last_reviewed: "2026-10-27"
+tags: ["qa", "testcases", "jira", "qa-tests-v2"]
+mcp_dependencies: ["atlassian"]

@@ -1,0 +1,6 @@
+name: avro-schema-compat
+owner: platform-ai
+version: "1.3.0"
+last_reviewed: "2026-10-29"
+tags: ["release", "avro", "schema-registry"]
+mcp_dependencies: []
